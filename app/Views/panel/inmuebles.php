@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260914-1">
+  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260915-1">
 </head>
 <body class="portal-page">
 <?php
@@ -39,6 +39,11 @@ $statsUnpublished = max(0, $statsTotal - $statsPublished);
 $statsErrors = (int) ($queue['failed'] ?? 0) + (int) ($queue['remote_errors'] ?? 0) + (int) ($fincaraizQueue['failed'] ?? 0) + (int) ($fincaraizQueue['remote_errors'] ?? 0);
 $logs = $operation['logs'] ?? [];
 $fincaraizLogs = $portalOps['fincaraiz']['logs'] ?? [];
+$combinedLogs = array_merge(
+  array_map(fn ($log) => $log + ['portal' => 'proppit', 'portal_label' => 'Proppit'], $logs),
+  array_map(fn ($log) => $log + ['portal' => 'fincaraiz', 'portal_label' => 'Finca Raiz'], $fincaraizLogs)
+);
+usort($combinedLogs, fn ($a, $b) => strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? '')));
 $activePage = $activePage ?? 'inmuebles';
 $listPages = ['inmuebles', 'publicados', 'eliminados', 'errores'];
 $isListPage = in_array($activePage, $listPages, true);
@@ -168,15 +173,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
       </section>
 
       <?php if ($isListPage): ?>
-      <nav class="portal-tabs" aria-label="Listados por portal">
-        <?php if ($activePage === 'inmuebles'): ?>
-          <a class="<?= $portalFilter === '' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($portalUrl('')) ?>">Todos los portales</a>
-        <?php endif; ?>
-        <a class="<?= $portalFilter === 'proppit' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($portalUrl('proppit')) ?>">Proppit</a>
-        <a class="<?= $portalFilter === 'fincaraiz' ? 'is-active' : '' ?>" href="<?= htmlspecialchars($portalUrl('fincaraiz')) ?>">Finca Raiz</a>
-      </nav>
       <form class="admin-filter-panel" method="get" action="<?= htmlspecialchars(\App\Core\Url::to($listRoute)) ?>">
-        <input type="hidden" name="portal" value="<?= htmlspecialchars($portalFilter) ?>">
         <div class="quick-filter-row">
           <label class="search-field">
             <span>Buscar</span>
@@ -196,6 +193,16 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
           <a class="refresh-button" href="<?= htmlspecialchars($currentUrl) ?>" aria-label="Actualizar">Actualizar</a>
         </div>
         <div class="filter-grid">
+          <label>
+            <span>Portal de accion</span>
+            <select name="portal">
+              <?php if ($activePage === 'inmuebles'): ?>
+                <option value=""<?= $selected('portal', '') ?>>Todos los portales</option>
+              <?php endif; ?>
+              <option value="proppit"<?= $portalFilter === 'proppit' ? ' selected' : '' ?>>Proppit</option>
+              <option value="fincaraiz"<?= $portalFilter === 'fincaraiz' ? ' selected' : '' ?>>Finca Raiz</option>
+            </select>
+          </label>
           <label>
             <span>Marcado en portal</span>
             <select name="marcado">
@@ -342,6 +349,42 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
             <p>Lo que el cron va a procesar, separado por portal y accion.</p>
           </div>
         </div>
+        <div class="panel-filter-strip" data-live-filter="queue">
+          <label>
+            <span>Buscar inmueble</span>
+            <input type="search" data-filter-search placeholder="Codigo, titulo, barrio...">
+          </label>
+          <label>
+            <span>Portal</span>
+            <select data-filter-field="portal">
+              <option value="">Todos</option>
+              <option value="proppit">Proppit</option>
+              <option value="fincaraiz">Finca Raiz</option>
+            </select>
+          </label>
+          <label>
+            <span>Accion</span>
+            <select data-filter-field="action">
+              <option value="">Todas</option>
+              <option value="publish">Publicar</option>
+              <option value="update">Actualizar</option>
+              <option value="delete">Despublicar Proppit</option>
+              <option value="pause">Despublicar Finca</option>
+              <option value="activate">Activar Finca</option>
+              <option value="verify">Verificar Finca</option>
+            </select>
+          </label>
+          <label>
+            <span>Estado cola</span>
+            <select data-filter-field="status">
+              <option value="">Todos</option>
+              <option value="pending">Pendiente</option>
+              <option value="processing">Procesando</option>
+              <option value="failed">Fallido</option>
+            </select>
+          </label>
+          <strong><span data-filter-count><?= count($queueItems) ?></span> visibles</strong>
+        </div>
         <?php if ($queueItems): ?>
           <div class="queue-list">
             <?php foreach ($queueItems as $item): ?>
@@ -349,7 +392,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                 $image = $item['portada_url'] ?: 'https://gocartagenarealestate.com/wp-content/uploads/2025/01/cropped-favicon_1.png';
                 $portalClass = (string) ($item['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit';
               ?>
-              <article class="queue-item">
+              <article class="queue-item" data-filter-item data-filter-portal="<?= htmlspecialchars((string) ($item['portal'] ?? '')) ?>" data-filter-action="<?= htmlspecialchars((string) ($item['desired_action'] ?? '')) ?>" data-filter-status="<?= htmlspecialchars((string) ($item['sync_status'] ?? '')) ?>" data-filter-text="<?= htmlspecialchars(strtolower((string) ($item['reference_id'] ?? '') . ' ' . (string) ($item['titulo'] ?? '') . ' ' . (string) ($item['barrio'] ?? '') . ' ' . (string) ($item['direccion'] ?? ''))) ?>">
                 <img src="<?= htmlspecialchars((string) $image) ?>" alt="<?= htmlspecialchars((string) ($item['titulo'] ?? 'Inmueble')) ?>" loading="lazy" decoding="async">
                 <div>
                   <strong><?= htmlspecialchars((string) ($item['titulo'] ?? 'Inmueble sin titulo')) ?></strong>
@@ -412,6 +455,60 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
             <span>API header: X-Api-Key</span>
           </article>
         </div>
+        <div class="automation-flow">
+          <div class="state-card-head">
+            <strong>Movimiento pendiente del cron</strong>
+            <span><?= count($queueItems) ?> acciones en cola</span>
+          </div>
+          <div class="panel-filter-strip compact-controls" data-live-filter="automation">
+            <label>
+              <span>Buscar</span>
+              <input type="search" data-filter-search placeholder="Codigo o titulo">
+            </label>
+            <label>
+              <span>Portal</span>
+              <select data-filter-field="portal">
+                <option value="">Todos</option>
+                <option value="proppit">Proppit</option>
+                <option value="fincaraiz">Finca Raiz</option>
+              </select>
+            </label>
+            <label>
+              <span>Accion</span>
+              <select data-filter-field="action">
+                <option value="">Todas</option>
+                <option value="publish">Publicar</option>
+                <option value="update">Actualizar</option>
+                <option value="delete">Despublicar</option>
+                <option value="pause">Pausar</option>
+                <option value="activate">Activar</option>
+                <option value="verify">Verificar</option>
+              </select>
+            </label>
+            <strong><span data-filter-count><?= count($queueItems) ?></span> visibles</strong>
+          </div>
+          <?php if ($queueItems): ?>
+            <div class="queue-list compact-queue">
+              <?php foreach ($queueItems as $item): ?>
+                <?php $portalClass = (string) ($item['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit'; ?>
+                <article class="queue-item compact-row" data-filter-item data-filter-portal="<?= htmlspecialchars((string) ($item['portal'] ?? '')) ?>" data-filter-action="<?= htmlspecialchars((string) ($item['desired_action'] ?? '')) ?>" data-filter-status="<?= htmlspecialchars((string) ($item['sync_status'] ?? '')) ?>" data-filter-text="<?= htmlspecialchars(strtolower((string) ($item['reference_id'] ?? '') . ' ' . (string) ($item['titulo'] ?? '') . ' ' . (string) ($item['barrio'] ?? ''))) ?>">
+                  <div>
+                    <strong><?= htmlspecialchars((string) ($item['titulo'] ?? 'Inmueble sin titulo')) ?></strong>
+                    <span>ID <?= htmlspecialchars((string) ($item['reference_id'] ?? '')) ?> · <?= htmlspecialchars((string) ($item['barrio'] ?: 'Sin barrio')) ?></span>
+                  </div>
+                  <span class="portal-badge <?= $portalClass ?>"><?= htmlspecialchars((string) ($item['portal_label'] ?? 'Portal')) ?></span>
+                  <strong><?= htmlspecialchars((string) ($item['action_label'] ?? 'Sin accion')) ?></strong>
+                  <span class="table-pill"><?= htmlspecialchars((string) ($item['sync_status'] ?? 'pending')) ?></span>
+                </article>
+              <?php endforeach; ?>
+            </div>
+          <?php else: ?>
+            <div class="portal-empty compact-empty">
+              <strong>No hay acciones pendientes.</strong>
+              <span>El cron no tiene nada por publicar, actualizar o despublicar ahora mismo.</span>
+            </div>
+          <?php endif; ?>
+        </div>
       </section>
       <?php endif; ?>
 
@@ -422,6 +519,41 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
             <h2>Estados por portal</h2>
             <p>Publicados, eliminados y errores en una sola vista.</p>
           </div>
+        </div>
+        <div class="panel-filter-strip" data-live-filter="states">
+          <label>
+            <span>Buscar inmueble</span>
+            <input type="search" data-filter-search placeholder="Codigo, titulo, barrio...">
+          </label>
+          <label>
+            <span>Grupo</span>
+            <select data-filter-field="group">
+              <option value="">Todos</option>
+              <option value="publicados">Publicados</option>
+              <option value="eliminados">Eliminados</option>
+              <option value="errores">Errores</option>
+            </select>
+          </label>
+          <label>
+            <span>Portal</span>
+            <select data-filter-field="portal">
+              <option value="">Todos</option>
+              <option value="proppit">Proppit</option>
+              <option value="fincaraiz">Finca Raiz</option>
+            </select>
+          </label>
+          <label>
+            <span>Estado remoto</span>
+            <select data-filter-field="remote">
+              <option value="">Todos</option>
+              <option value="published">published</option>
+              <option value="active">active</option>
+              <option value="deleted">deleted</option>
+              <option value="disabled">disabled</option>
+              <option value="error">error</option>
+            </select>
+          </label>
+          <strong><span data-filter-count><?= array_sum(array_map('count', $stateSummary)) ?></span> visibles</strong>
         </div>
         <div class="state-columns">
           <?php foreach (['publicados' => 'Publicados', 'eliminados' => 'Eliminados', 'errores' => 'Errores'] as $key => $label): ?>
@@ -437,7 +569,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                       $image = $item['portada_url'] ?: 'https://gocartagenarealestate.com/wp-content/uploads/2025/01/cropped-favicon_1.png';
                       $portalClass = (string) ($item['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit';
                     ?>
-                    <div class="state-row">
+                    <div class="state-row" data-filter-item data-filter-group="<?= htmlspecialchars($key) ?>" data-filter-portal="<?= htmlspecialchars((string) ($item['portal'] ?? '')) ?>" data-filter-remote="<?= htmlspecialchars((string) ($item['remote_status'] ?? '')) ?>" data-filter-status="<?= htmlspecialchars((string) ($item['sync_status'] ?? '')) ?>" data-filter-text="<?= htmlspecialchars(strtolower((string) ($item['reference_id'] ?? '') . ' ' . (string) ($item['titulo'] ?? '') . ' ' . (string) ($item['barrio'] ?? '') . ' ' . (string) ($item['last_error'] ?? ''))) ?>">
                       <img src="<?= htmlspecialchars((string) $image) ?>" alt="<?= htmlspecialchars((string) ($item['titulo'] ?? 'Inmueble')) ?>" loading="lazy" decoding="async">
                       <div>
                         <strong><?= htmlspecialchars((string) ($item['titulo'] ?? 'Inmueble sin titulo')) ?></strong>
@@ -644,46 +776,70 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
         <section class="logs-panel" id="logs">
           <div class="ops-heading">
             <div>
-              <h2>Logs Proppit</h2>
-              <p>Ultimas respuestas procesadas por el cron o por botones del panel.</p>
+              <h2>Logs recientes</h2>
+              <p>Respuestas del cron y de los botones del panel, mezcladas por hora.</p>
             </div>
           </div>
-          <div class="logs-list">
-            <?php foreach ($logs as $log): ?>
-              <article>
-                <strong><?= htmlspecialchars((string) ($log['titulo'] ?: 'Inmueble sin titulo')) ?></strong>
-                <small>ID <?= htmlspecialchars((string) ($log['reference_id'] ?? 'sin codigo')) ?> · <?= htmlspecialchars((string) ($log['action'] ?? 'sync')) ?></small>
-                <span><?= ((int) ($log['success'] ?? 0) === 1) ? 'OK' : 'ERROR' ?> · HTTP <?= htmlspecialchars((string) ($log['http_status'] ?? '')) ?> · <?= htmlspecialchars((string) ($log['created_at'] ?? '')) ?></span>
+          <div class="panel-filter-strip" data-live-filter="logs">
+            <label>
+              <span>Buscar</span>
+              <input type="search" data-filter-search placeholder="Codigo, titulo, accion o error...">
+            </label>
+            <label>
+              <span>Portal</span>
+              <select data-filter-field="portal">
+                <option value="">Todos</option>
+                <option value="proppit">Proppit</option>
+                <option value="fincaraiz">Finca Raiz</option>
+              </select>
+            </label>
+            <label>
+              <span>Resultado</span>
+              <select data-filter-field="result">
+                <option value="">Todos</option>
+                <option value="ok">OK</option>
+                <option value="error">Error</option>
+              </select>
+            </label>
+            <label>
+              <span>HTTP</span>
+              <select data-filter-field="http">
+                <option value="">Todos</option>
+                <option value="200">200</option>
+                <option value="201">201</option>
+                <option value="202">202</option>
+                <option value="204">204</option>
+                <option value="400">400</option>
+                <option value="422">422</option>
+                <option value="500">500</option>
+              </select>
+            </label>
+            <strong><span data-filter-count><?= count($combinedLogs) ?></span> visibles</strong>
+          </div>
+          <div class="logs-list unified-logs">
+            <?php foreach ($combinedLogs as $log): ?>
+              <?php
+                $ok = (int) ($log['success'] ?? 0) === 1;
+                $portalClass = (string) ($log['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit';
+              ?>
+              <article data-filter-item data-filter-portal="<?= htmlspecialchars((string) ($log['portal'] ?? '')) ?>" data-filter-result="<?= $ok ? 'ok' : 'error' ?>" data-filter-http="<?= htmlspecialchars((string) ($log['http_status'] ?? '')) ?>" data-filter-text="<?= htmlspecialchars(strtolower((string) ($log['reference_id'] ?? '') . ' ' . (string) ($log['titulo'] ?? '') . ' ' . (string) ($log['action'] ?? '') . ' ' . (string) ($log['error_message'] ?? ''))) ?>">
+                <div class="log-main">
+                  <span class="portal-badge <?= $portalClass ?>"><?= htmlspecialchars((string) ($log['portal_label'] ?? 'Portal')) ?></span>
+                  <strong><?= htmlspecialchars((string) ($log['titulo'] ?: 'Inmueble sin titulo')) ?></strong>
+                  <small>ID <?= htmlspecialchars((string) ($log['reference_id'] ?? 'sin codigo')) ?> · <?= htmlspecialchars((string) ($log['action'] ?? 'sync')) ?></small>
+                </div>
+                <div class="log-status <?= $ok ? 'is-ok' : 'is-error' ?>">
+                  <strong><?= $ok ? 'OK' : 'ERROR' ?></strong>
+                  <span>HTTP <?= htmlspecialchars((string) ($log['http_status'] ?? '')) ?></span>
+                  <small><?= htmlspecialchars((string) ($log['created_at'] ?? '')) ?></small>
+                </div>
                 <?php if (!empty($log['error_message'])): ?>
                   <p><?= htmlspecialchars((string) $log['error_message']) ?></p>
                 <?php endif; ?>
               </article>
             <?php endforeach; ?>
-            <?php if (!$logs): ?>
+            <?php if (!$combinedLogs): ?>
               <article><strong>Sin logs todavia</strong><span>Cuando el cron procese acciones apareceran aqui.</span></article>
-            <?php endif; ?>
-          </div>
-        </section>
-        <section class="logs-panel">
-          <div class="ops-heading">
-            <div>
-              <h2>Logs Finca Raiz</h2>
-              <p>Envios, verificaciones de tareas y cambios de estado.</p>
-            </div>
-          </div>
-          <div class="logs-list">
-            <?php foreach ($fincaraizLogs as $log): ?>
-              <article>
-                <strong><?= htmlspecialchars((string) ($log['titulo'] ?: 'Inmueble sin titulo')) ?></strong>
-                <small>ID <?= htmlspecialchars((string) ($log['reference_id'] ?? 'sin codigo')) ?> · <?= htmlspecialchars((string) ($log['action'] ?? 'sync')) ?></small>
-                <span><?= ((int) ($log['success'] ?? 0) === 1) ? 'OK' : 'ERROR' ?> · HTTP <?= htmlspecialchars((string) ($log['http_status'] ?? '')) ?> · <?= htmlspecialchars((string) ($log['created_at'] ?? '')) ?></span>
-                <?php if (!empty($log['error_message'])): ?>
-                  <p><?= htmlspecialchars((string) $log['error_message']) ?></p>
-                <?php endif; ?>
-              </article>
-            <?php endforeach; ?>
-            <?php if (!$fincaraizLogs): ?>
-              <article><strong>Sin logs todavia</strong><span>Cuando Finca Raiz procese acciones apareceran aqui.</span></article>
             <?php endif; ?>
           </div>
         </section>
@@ -807,6 +963,6 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
     </section>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="<?= htmlspecialchars(\App\Core\Url::to('/panel.js')) ?>?v=20260909-3"></script>
+  <script src="<?= htmlspecialchars(\App\Core\Url::to('/panel.js')) ?>?v=20260915-1"></script>
 </body>
 </html>
