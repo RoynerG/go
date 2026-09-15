@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+
+/storage/
+/vendor/
+/node_modules/
+
+*.log
+*.tmp
+*.cache
+
+.DS_Store
+Thumbs.db
