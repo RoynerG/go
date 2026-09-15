@@ -1720,6 +1720,13 @@ body.modal-open {
   line-height: 1;
 }
 
+.stats-grid small {
+  color: var(--admin-subtle);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .portal-tabs {
   display: flex;
   gap: 8px;

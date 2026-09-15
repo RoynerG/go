@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260909-3">
+  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260914-1">
 </head>
 <body class="portal-page">
 <?php
@@ -33,6 +33,7 @@ $fincaraizQuotaUsed = (int) ($fincaraizQueue['quota_used'] ?? $fincaraizQueue['p
 $statsTotal = (int) ($queue['total'] ?? $total);
 $statsPublished = (int) ($queue['published'] ?? 0);
 $statsFincaraizPublished = (int) ($fincaraizQueue['published'] ?? 0);
+$statsFincaraizPaused = (int) ($fincaraizQueue['paused'] ?? 0);
 $statsPending = (int) ($queue['pending'] ?? 0) + (int) ($queue['processing'] ?? 0) + (int) ($fincaraizQueue['pending'] ?? 0) + (int) ($fincaraizQueue['processing'] ?? 0);
 $statsUnpublished = max(0, $statsTotal - $statsPublished);
 $statsErrors = (int) ($queue['failed'] ?? 0) + (int) ($queue['remote_errors'] ?? 0) + (int) ($fincaraizQueue['failed'] ?? 0) + (int) ($fincaraizQueue['remote_errors'] ?? 0);
@@ -105,7 +106,8 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
       <section class="sidebar-status">
         <strong>Colas activas</strong>
         <span>Proppit: <?= (int) ($queue['pending'] ?? 0) ?> pendientes · <?= (int) ($queue['failed'] ?? 0) ?> fallidos</span>
-        <span>Finca Raiz: <?= (int) ($fincaraizQueue['pending'] ?? 0) ?> pendientes · cupo <?= $fincaraizQuota ?></span>
+        <span>Finca Raiz: <?= (int) ($fincaraizQueue['pending'] ?? 0) ?> pendientes · <?= $statsFincaraizPublished ?>/<?= $fincaraizQuota ?> activos</span>
+        <span><?= $statsFincaraizPaused ?> desactivados · <?= $fincaraizQuotaUsed ?> marcados para cupo</span>
       </section>
     </aside>
 
@@ -147,8 +149,9 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
           <strong><?= $statsPublished ?></strong>
         </article>
         <article>
-          <span>Publicados Finca Raiz</span>
-          <strong><?= $fincaraizQuotaUsed ?>/<?= $fincaraizQuota ?></strong>
+          <span>Activos Finca Raiz</span>
+          <strong><?= $statsFincaraizPublished ?>/<?= $fincaraizQuota ?></strong>
+          <small><?= $fincaraizQuotaUsed ?> marcados · <?= $statsFincaraizPaused ?> desactivados</small>
         </article>
         <article>
           <span>Sin publicar</span>
