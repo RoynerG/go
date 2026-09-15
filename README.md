@@ -15,6 +15,16 @@ define('PG_MVC_SECRET', 'mismo-valor-de-API_SHARED_SECRET');
 
 El archivo `.env` no se sube al repositorio por seguridad.
 
+## Desarrollo local
+
+Ejecuta el panel apuntando el servidor a la carpeta `public`:
+
+```bash
+php -S 127.0.0.1:8099 -t public
+```
+
+En el servidor local de PHP la app ignora `APP_BASE_PATH` automaticamente, asi los estilos cargan desde `/assets.css` y el panel desde `/panel/login`.
+
 ## Cron
 
 Procesar todos los portales:
