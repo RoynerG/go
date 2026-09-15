@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260903-1">
+  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260914-1">
 </head>
 <body class="portal-page">
 <?php
@@ -22,6 +22,7 @@ $price = (float) ($inmueble['precio_venta'] ?: $inmueble['precio_arriendo'] ?: 0
 $isUnavailable = (string) ($inmueble['estado'] ?? '') === 'no_disponible';
 $isBoosted = (int) ($inmueble['is_boosted'] ?? 0) === 1;
 $isExclusive = (int) ($inmueble['is_exclusive'] ?? 0) === 1;
+$fincaraizPublishText = (string) ($fincaraiz['remote_status'] ?? '') === 'disabled' ? 'ACTIVAR FR' : 'PUBLICAR FR';
 $currentUrl = (string) ($_SERVER['REQUEST_URI'] ?? \App\Core\Url::to('/panel/inmuebles/' . $inmueble['id']));
 $flash = $flash ?? null;
 ?>
@@ -118,7 +119,7 @@ $flash = $flash ?? null;
                 <form method="post" action="<?= htmlspecialchars(\App\Core\Url::to('/panel/inmuebles/' . $inmueble['id'] . '/fincaraiz/publicar')) ?>" data-ajax-action data-action-label="publicar finca raiz">
                   <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf) ?>">
                   <input type="hidden" name="_redirect" value="<?= htmlspecialchars($currentUrl) ?>">
-                  <button type="submit">PUBLICAR FR</button>
+                  <button type="submit"><?= htmlspecialchars($fincaraizPublishText) ?></button>
                 </form>
                 <form method="post" action="<?= htmlspecialchars(\App\Core\Url::to('/panel/inmuebles/' . $inmueble['id'] . '/fincaraiz/actualizar')) ?>" data-ajax-action data-action-label="actualizar finca raiz">
                   <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf) ?>">

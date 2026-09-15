@@ -117,6 +117,15 @@ final class InmuebleRepository
             return false;
         }
 
+        $fincaraizAd = $inmueble['fincaraiz'] ?? [];
+        if (
+            $action === 'publish'
+            && trim((string) ($fincaraizAd['external_id'] ?? '')) !== ''
+            && (string) ($fincaraizAd['remote_status'] ?? '') === 'disabled'
+        ) {
+            $action = 'activate';
+        }
+
         if (!in_array($action, ['pause', 'verify'], true) && $inmueble['estado'] === 'no_disponible') {
             return false;
         }
@@ -255,6 +264,7 @@ final class InmuebleRepository
             'publish' => 0,
             'update' => 0,
             'pause' => 0,
+            'activate' => 0,
             'verify' => 0,
             'skipped' => 0,
             'public_enabled' => $publicables,
@@ -289,7 +299,17 @@ final class InmuebleRepository
                 continue;
             }
 
-            if (!$hasExternalId || in_array($remoteStatus, ['', 'not_sent', 'deleted', 'disabled', 'error'], true)) {
+            if ($hasExternalId && $remoteStatus === 'disabled') {
+                if ($desiredAction !== 'activate' || $syncStatus !== 'pending') {
+                    $this->ensureFincaraizActionAd($id, 'activate');
+                    $stats['activate']++;
+                    continue;
+                }
+                $stats['skipped']++;
+                continue;
+            }
+
+            if (!$hasExternalId || in_array($remoteStatus, ['', 'not_sent', 'deleted', 'error'], true)) {
                 if ($desiredAction !== 'publish' || $syncStatus !== 'pending') {
                     $this->ensureFincaraizActionAd($id, 'publish');
                     $stats['publish']++;

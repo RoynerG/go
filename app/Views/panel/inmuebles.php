@@ -510,6 +510,9 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
               $rowPublishLabel = $rowActionPortal === 'fincaraiz' ? 'publicar finca raiz' : 'publicar';
               $rowUpdateLabel = $rowActionPortal === 'fincaraiz' ? 'actualizar finca raiz' : 'actualizar';
               $rowUnpublishLabel = $rowActionPortal === 'fincaraiz' ? 'despublicar finca raiz' : 'despublicar';
+              $rowPublishButtonText = $rowActionPortal === 'fincaraiz' && (string) ($row['fincaraiz_remote_status'] ?? '') === 'disabled'
+                ? 'ACTIVAR EN ' . strtoupper($rowPortalLabel)
+                : 'PUBLICAR EN ' . strtoupper($rowPortalLabel);
               $operationLabel = ((float) ($row['precio_arriendo'] ?? 0) > 0 && (float) ($row['precio_venta'] ?? 0) <= 0) ? 'Arriendo' : 'Venta';
               $price = (float) ($row['precio_venta'] ?: $row['precio_arriendo'] ?: 0);
               $image = $row['portada_url'] ?: 'https://gocartagenarealestate.com/wp-content/uploads/2025/01/cropped-favicon_1.png';
@@ -593,7 +596,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                     <form method="post" action="<?= htmlspecialchars(\App\Core\Url::to($rowPublishPath)) ?>" data-ajax-action data-action-label="<?= htmlspecialchars($rowPublishLabel) ?>">
                       <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf) ?>">
                       <input type="hidden" name="_redirect" value="<?= htmlspecialchars($currentUrl) ?>">
-                      <button type="submit">PUBLICAR EN <?= htmlspecialchars(strtoupper($rowPortalLabel)) ?></button>
+                      <button type="submit"><?= htmlspecialchars($rowPublishButtonText) ?></button>
                     </form>
                     <form method="post" action="<?= htmlspecialchars(\App\Core\Url::to($rowUpdatePath)) ?>" data-ajax-action data-action-label="<?= htmlspecialchars($rowUpdateLabel) ?>">
                       <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf) ?>">
