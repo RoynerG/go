@@ -221,6 +221,24 @@
     if (node) node.textContent = value;
   }
 
+  function portalActionText(action, syncStatus) {
+    var labels = {
+      publish: 'Publicar',
+      update: 'Actualizar',
+      delete: 'Despublicar',
+      pause: 'Despublicar',
+      activate: 'Activar',
+      verify: 'Verificar'
+    };
+    var actionKey = String(action || '').trim();
+    var syncKey = String(syncStatus || '').trim();
+    var label = labels[actionKey] || (actionKey ? actionKey.charAt(0).toUpperCase() + actionKey.slice(1) : 'Sin accion');
+    if (syncKey === 'pending') return 'En cola: ' + label;
+    if (syncKey === 'processing') return 'Procesando: ' + label;
+    if (syncKey === 'failed') return 'Fallo: ' + label;
+    return actionKey ? 'Ultima: ' + label : 'Sin cola';
+  }
+
   function updateCard(card) {
     if (!card || !card.id) return;
     updateDetailPage(card);
@@ -228,9 +246,12 @@
     if (!article) return;
 
     updateText(article, '[data-card-sync]', card.sync_status || 'pending');
-    updateText(article, '[data-card-remote]', 'Proppit: ' + (card.remote_status || 'not_sent'));
+    updateText(article, '[data-card-remote]', card.remote_status || 'not_sent');
+    updateText(article, '[data-card-proppit-sync]', card.sync_status || 'pending');
+    updateText(article, '[data-card-proppit-action]', portalActionText(card.desired_action, card.sync_status));
     updateText(article, '[data-card-fr-sync]', card.fincaraiz_sync_status || 'pending');
     updateText(article, '[data-card-fr-remote]', card.fincaraiz_remote_status || 'not_sent');
+    updateText(article, '[data-card-fr-action]', portalActionText(card.fincaraiz_desired_action, card.fincaraiz_sync_status));
     updateText(article, '[data-card-boosted]', card.is_boosted ? 'Destacado: activo' : 'Destacado: inactivo');
     updateText(article, '[data-card-exclusive]', card.is_exclusive ? 'Exclusivo: activo' : 'Exclusivo: inactivo');
 
@@ -263,6 +284,10 @@
       try {
         var detail = JSON.parse(detailButton.getAttribute('data-detail'));
         detail.marked = card.marked || detail.marked;
+        detail.proppitAction = card.desired_action || detail.proppitAction;
+        detail.proppitActionText = portalActionText(card.desired_action, card.sync_status);
+        detail.fincaraizAction = card.fincaraiz_desired_action || detail.fincaraizAction;
+        detail.fincaraizActionText = portalActionText(card.fincaraiz_desired_action, card.fincaraiz_sync_status);
         detail.fincaraizMarked = card.fincaraiz_remote_status || detail.fincaraizMarked;
         detail.fincaraizSyncStatus = card.fincaraiz_sync_status || detail.fincaraizSyncStatus;
         detail.fincaraizRemoteStatus = card.fincaraiz_remote_status || detail.fincaraizRemoteStatus;

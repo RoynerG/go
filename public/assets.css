@@ -2071,7 +2071,56 @@ body.modal-open {
 }
 
 .portal-chip-cell {
-  min-width: 190px;
+  min-width: 270px;
+}
+
+.portal-status-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.portal-status-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--admin-card) 92%, #eaf2ff);
+}
+
+.portal-status-row strong,
+.portal-status-row span {
+  display: block;
+}
+
+.portal-status-row strong {
+  color: var(--admin-text);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.portal-status-row > div:first-child > span {
+  margin-top: 4px;
+  color: var(--admin-subtle);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.portal-status-row.is-proppit {
+  border-left: 4px solid var(--admin-blue);
+}
+
+.portal-status-row.is-fincaraiz {
+  border-left: 4px solid var(--admin-good);
+  background: color-mix(in srgb, var(--admin-card) 92%, #dbf8ea);
+}
+
+.portal-status-tags {
+  display: grid;
+  gap: 5px;
+  justify-items: end;
 }
 
 .table-actions {
@@ -2482,6 +2531,14 @@ body.modal-open {
   .compact-row > strong,
   .compact-row .table-pill {
     grid-column: 1;
+  }
+
+  .portal-status-row {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-status-tags {
+    justify-items: start;
   }
 
   .queue-error,

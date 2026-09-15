@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260915-1">
+  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260915-2">
 </head>
 <body class="portal-page">
 <?php
@@ -623,11 +623,36 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
             <tbody>
           <?php foreach ($rows as $row): ?>
             <?php
+              $portalActionLabels = [
+                'publish' => 'Publicar',
+                'update' => 'Actualizar',
+                'delete' => 'Despublicar',
+                'pause' => 'Despublicar',
+                'activate' => 'Activar',
+                'verify' => 'Verificar',
+              ];
+              $portalActionText = function (?string $action, ?string $syncStatus) use ($portalActionLabels): string {
+                $action = trim((string) $action);
+                $syncStatus = trim((string) $syncStatus);
+                $label = $portalActionLabels[$action] ?? ($action !== '' ? ucfirst($action) : 'Sin accion');
+                return match ($syncStatus) {
+                  'pending' => 'En cola: ' . $label,
+                  'processing' => 'Procesando: ' . $label,
+                  'failed' => 'Fallo: ' . $label,
+                  default => $action !== '' ? 'Ultima: ' . $label : 'Sin cola',
+                };
+              };
               $isMarked = (int) ($row['publicar_proppit'] ?? 0) === 1;
               $isFincaraizMarked = (int) ($row['publicar_fincaraiz'] ?? 0) === 1;
               $isUnavailable = (string) ($row['estado'] ?? '') === 'no_disponible';
               $isBoosted = (int) ($row['is_boosted'] ?? 0) === 1;
               $isExclusive = (int) ($row['is_exclusive'] ?? 0) === 1;
+              $proppitAction = (string) ($row['desired_action'] ?? '');
+              $proppitSync = (string) ($row['sync_status'] ?? 'pending');
+              $proppitRemote = (string) ($row['remote_status'] ?? 'not_sent');
+              $fincaraizAction = (string) ($row['fincaraiz_desired_action'] ?? '');
+              $fincaraizSync = (string) ($row['fincaraiz_sync_status'] ?? 'pending');
+              $fincaraizRemote = (string) ($row['fincaraiz_remote_status'] ?? 'not_sent');
               $rowActionPortal = $actionPortal;
               $rowPortalLabel = $rowActionPortal === 'fincaraiz' ? 'Finca Raiz' : 'Proppit';
               $rowPublishPath = $rowActionPortal === 'fincaraiz'
@@ -658,8 +683,12 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                 'image' => (string) $image,
                 'marked' => $isMarked ? 'Marcado en portal' : 'No marcado en portal',
                 'fincaraizMarked' => $isFincaraizMarked ? 'Marcado Finca Raiz' : 'No marcado Finca Raiz',
-                'fincaraizSyncStatus' => (string) ($row['fincaraiz_sync_status'] ?? 'pending'),
-                'fincaraizRemoteStatus' => (string) ($row['fincaraiz_remote_status'] ?? 'not_sent'),
+                'proppitAction' => $proppitAction,
+                'proppitActionText' => $portalActionText($proppitAction, $proppitSync),
+                'fincaraizAction' => $fincaraizAction,
+                'fincaraizActionText' => $portalActionText($fincaraizAction, $fincaraizSync),
+                'fincaraizSyncStatus' => $fincaraizSync,
+                'fincaraizRemoteStatus' => $fincaraizRemote,
                 'habitaciones' => (int) ($row['habitaciones'] ?? 0),
                 'banos' => (int) ($row['banos'] ?? 0),
                 'area' => number_format((float) ($row['area_construida'] ?: $row['area_privada'] ?: 0), 0, ',', '.'),
@@ -705,13 +734,32 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                   <span class="table-mini"><?= (int) ($row['habitaciones'] ?? 0) ?> Hab · <?= (int) ($row['banos'] ?? 0) ?> Ba · <?= number_format((float) ($row['area_construida'] ?: $row['area_privada'] ?: 0), 0, ',', '.') ?> m²</span>
                 </td>
                 <td>
-                  <span class="table-pill" data-card-sync><?= htmlspecialchars((string) ($row['sync_status'] ?? 'pending')) ?></span>
+                  <span class="table-pill" data-card-sync><?= htmlspecialchars($proppitSync) ?></span>
                   <span class="table-mini"><?= $isUnavailable ? 'No disponible' : 'Disponible' ?></span>
                 </td>
                 <td class="portal-chip-cell">
-                  <span class="table-pill table-pill-dark" data-card-remote>Proppit: <?= htmlspecialchars((string) ($row['remote_status'] ?? 'not_sent')) ?></span>
-                  <span class="table-pill table-pill-fr" data-card-fr-remote><?= htmlspecialchars((string) ($row['fincaraiz_remote_status'] ?? 'not_sent')) ?></span>
-                  <span class="table-mini" data-card-fr-sync><?= htmlspecialchars((string) ($row['fincaraiz_sync_status'] ?? 'pending')) ?></span>
+                  <div class="portal-status-stack">
+                    <div class="portal-status-row is-proppit">
+                      <div>
+                        <strong>Proppit</strong>
+                        <span data-card-proppit-action><?= htmlspecialchars($portalActionText($proppitAction, $proppitSync)) ?></span>
+                      </div>
+                      <div class="portal-status-tags">
+                        <span class="table-pill table-pill-dark" data-card-remote><?= htmlspecialchars($proppitRemote) ?></span>
+                        <span class="table-pill" data-card-proppit-sync><?= htmlspecialchars($proppitSync) ?></span>
+                      </div>
+                    </div>
+                    <div class="portal-status-row is-fincaraiz">
+                      <div>
+                        <strong>Finca Raiz</strong>
+                        <span data-card-fr-action><?= htmlspecialchars($portalActionText($fincaraizAction, $fincaraizSync)) ?></span>
+                      </div>
+                      <div class="portal-status-tags">
+                        <span class="table-pill table-pill-fr" data-card-fr-remote><?= htmlspecialchars($fincaraizRemote) ?></span>
+                        <span class="table-pill" data-card-fr-sync><?= htmlspecialchars($fincaraizSync) ?></span>
+                      </div>
+                    </div>
+                  </div>
                   <div class="property-error table-error" data-card-error <?= $row['last_error'] ? '' : 'hidden' ?>><?= htmlspecialchars((string) ($row['last_error'] ?? '')) ?></div>
                   <div class="property-error table-error" data-card-fr-error <?= $row['fincaraiz_last_error'] ? '' : 'hidden' ?>><?= htmlspecialchars((string) ($row['fincaraiz_last_error'] ?? '')) ?></div>
                 </td>
@@ -963,6 +1011,6 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
     </section>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="<?= htmlspecialchars(\App\Core\Url::to('/panel.js')) ?>?v=20260915-1"></script>
+  <script src="<?= htmlspecialchars(\App\Core\Url::to('/panel.js')) ?>?v=20260915-2"></script>
 </body>
 </html>
