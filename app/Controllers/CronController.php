@@ -34,9 +34,11 @@ final class CronController
         }
 
         $repository = new InmuebleRepository();
+        $service = new FincaraizSyncService();
+        $remote = $service->reconcileRemoteListings();
         $audit = $repository->refreshFincaraizQueueFromInmuebles();
-        $result = (new FincaraizSyncService())->run(20);
-        Response::json(['ok' => true, 'audit' => $audit] + $result);
+        $result = $service->run(20);
+        Response::json(['ok' => true, 'remote' => $remote, 'audit' => $audit] + $result);
     }
 
     public function syncAll(): void
@@ -48,6 +50,8 @@ final class CronController
 
         $repository = new InmuebleRepository();
         $proppitAudit = $repository->refreshProppitQueueFromInmuebles();
+        $fincaraizService = new FincaraizSyncService();
+        $fincaraizRemote = $fincaraizService->reconcileRemoteListings();
         $fincaraizAudit = $repository->refreshFincaraizQueueFromInmuebles();
 
         Response::json([
@@ -57,8 +61,9 @@ final class CronController
                 'sync' => (new ProppitSyncService())->run(20),
             ],
             'fincaraiz' => [
+                'remote' => $fincaraizRemote,
                 'audit' => $fincaraizAudit,
-                'sync' => (new FincaraizSyncService())->run(20),
+                'sync' => $fincaraizService->run(20),
             ],
         ]);
     }

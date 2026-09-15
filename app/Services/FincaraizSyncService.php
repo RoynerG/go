@@ -43,6 +43,80 @@ final class FincaraizSyncService
         return $this->runAds([$ad]);
     }
 
+    public function reconcileRemoteListings(int $maxPages = 10): array
+    {
+        $clientId = trim((string) Env::get('FINCARAIZ_CLIENT_ID', ''));
+        if ($clientId === '') {
+            return ['checked' => 0, 'updated' => 0, 'active' => 0, 'disabled' => 0, 'skipped' => 0];
+        }
+
+        $result = ['checked' => 0, 'updated' => 0, 'active' => 0, 'disabled' => 0, 'skipped' => 0, 'searched' => 0];
+        $statement = $this->pdo->prepare(
+            "UPDATE fincaraiz_ads f
+             INNER JOIN inmuebles i ON i.id = f.inmueble_id
+             SET f.remote_status = :remote_status,
+                 f.sync_status = IF(f.sync_status IN ('pending','processing'), f.sync_status, 'synced'),
+                 f.external_id = COALESCE(:external_id, f.external_id),
+                 f.fr_property_id = COALESCE(:fr_property_id, f.fr_property_id),
+                 f.external_url = :external_url,
+                 f.last_error = IF(f.sync_status IN ('pending','processing'), f.last_error, NULL),
+                 f.updated_at = NOW()
+             WHERE i.reference_id = :reference_id"
+        );
+
+        $seenReferences = [];
+        for ($page = 1; $page <= $maxPages; $page++) {
+            $response = $this->client->listListings($clientId, $page, 100);
+            if (!$response['success']) {
+                break;
+            }
+
+            $body = $response['body'] ?? [];
+            $items = is_array($body['results'] ?? null) ? $body['results'] : [];
+            foreach ($items as $item) {
+                $referenceId = $this->applyRemoteListing($item, $statement, $result);
+                if ($referenceId !== null) {
+                    $seenReferences[$referenceId] = true;
+                }
+            }
+
+            if (empty($body['next'])) {
+                break;
+            }
+        }
+
+        $candidates = $this->pdo->query(
+            "SELECT DISTINCT i.reference_id
+             FROM fincaraiz_ads f
+             INNER JOIN inmuebles i ON i.id = f.inmueble_id
+             WHERE i.reference_id <> ''
+               AND (f.remote_status = 'active' OR i.publicar_fincaraiz = 1)"
+        )->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+        foreach ($candidates as $referenceId) {
+            $referenceId = trim((string) $referenceId);
+            if ($referenceId === '' || isset($seenReferences[$referenceId])) {
+                continue;
+            }
+
+            $searchResponse = $this->client->listListings($clientId, 1, 20, $referenceId);
+            if (!$searchResponse['success']) {
+                continue;
+            }
+
+            $items = is_array($searchResponse['body']['results'] ?? null) ? $searchResponse['body']['results'] : [];
+            foreach ($items as $item) {
+                if (is_array($item) && trim((string) ($item['integratorCode'] ?? '')) === $referenceId) {
+                    $result['searched']++;
+                    $this->applyRemoteListing($item, $statement, $result);
+                    break;
+                }
+            }
+        }
+
+        return $result;
+    }
+
     private function runAds(array $ads): array
     {
         $result = ['processed' => 0, 'synced' => 0, 'failed' => 0, 'queued' => 0, 'inmueble_ids' => []];
@@ -83,6 +157,13 @@ final class FincaraizSyncService
         if (in_array($action, ['update', 'pause', 'activate'], true) && trim((string) ($ad['external_id'] ?? '')) === '') {
             if ($action === 'update') {
                 $action = 'publish';
+            } elseif ($action === 'pause') {
+                $this->markSynced((int) $ad['id'], 'disabled', null, null, null, null, [
+                    'success' => true,
+                    'status' => 204,
+                    'body' => ['skipped' => true, 'reason' => 'missing_listing_id'],
+                ]);
+                return true;
             } else {
                 throw new RuntimeException('No hay listing_id confirmado para esa accion en Finca Raiz.');
             }
@@ -164,7 +245,7 @@ final class FincaraizSyncService
         }
 
         $previousAction = (string) (($this->decode($ad['last_response'])['action'] ?? '') ?: 'publish');
-        if (!in_array($status, ['COMPLETED', 'FORWARDED', 'SUCCESS'], true)) {
+        if (!in_array($status, ['COMPLETED', 'FORWARDED', 'SUCCESS', 'READY'], true)) {
             $response['action'] = $previousAction;
             $this->markStillPending((int) $ad['id'], $response);
             return false;
@@ -384,6 +465,41 @@ final class FincaraizSyncService
         return is_array($first) ? $first : [];
     }
 
+    private function applyRemoteListing(mixed $item, \PDOStatement $statement, array &$result): ?string
+    {
+        if (!is_array($item)) {
+            $result['skipped']++;
+            return null;
+        }
+
+        $referenceId = trim((string) ($item['integratorCode'] ?? ''));
+        $remoteStatus = $this->remoteStatusFromListing($item);
+        if ($referenceId === '' || $remoteStatus === null) {
+            $result['skipped']++;
+            return null;
+        }
+
+        $frPropertyId = $this->frPropertyId($item);
+        $listingId = $this->listingId($item);
+        $statement->execute([
+            'remote_status' => $remoteStatus,
+            'external_id' => $listingId !== null && $listingId !== '' ? $listingId : null,
+            'fr_property_id' => $frPropertyId !== null && $frPropertyId !== '' ? $frPropertyId : null,
+            'external_url' => $remoteStatus === 'active' ? $this->publicUrl($frPropertyId) : null,
+            'reference_id' => $referenceId,
+        ]);
+
+        $result['checked']++;
+        $result['updated'] += $statement->rowCount();
+        if ($remoteStatus === 'active') {
+            $result['active']++;
+        } elseif ($remoteStatus === 'disabled') {
+            $result['disabled']++;
+        }
+
+        return $referenceId;
+    }
+
     private function listingId(array $data): ?string
     {
         foreach (['listing_id', 'listingId', 'id'] as $key) {
@@ -393,6 +509,16 @@ final class FincaraizSyncService
         }
 
         return null;
+    }
+
+    private function remoteStatusFromListing(array $data): ?string
+    {
+        $status = trim((string) ($data['status'] ?? ''));
+        return match ($status) {
+            '4', 'ACTIVE', 'active' => 'active',
+            '1', 'DISABLED', 'disabled', 'INACTIVE', 'inactive' => 'disabled',
+            default => null,
+        };
     }
 
     private function frPropertyId(array $data): ?string
@@ -423,6 +549,10 @@ final class FincaraizSyncService
 
     private function responseError(array $response): ?string
     {
+        if (($response['success'] ?? false) === true) {
+            return null;
+        }
+
         $body = $response['body'] ?? [];
         if (is_array($body)) {
             $message = $body['detail'] ?? $body['error'] ?? $body['message'] ?? null;

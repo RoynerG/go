@@ -290,9 +290,11 @@ final class PanelController
 
         try {
             $repository = new InmuebleRepository();
+            $service = new FincaraizSyncService();
+            $remote = $service->reconcileRemoteListings();
             $audit = $repository->refreshFincaraizQueueFromInmuebles();
             $limit = max(1, min(50, (int) ($_POST['limit'] ?? 10)));
-            $sync = (new FincaraizSyncService())->run($limit);
+            $sync = $service->run($limit);
             if (($sync['failed'] ?? 0) > 0) {
                 $type = 'warning';
                 $message = 'La cola se proceso, pero algunos inmuebles fallaron. Revisa los logs de Finca Raiz.';
@@ -304,6 +306,7 @@ final class PanelController
                 array_unique(array_map('intval', $sync['inmueble_ids'] ?? []))
             )));
             $payload = [
+                'remote' => $remote,
                 'audit' => $audit,
                 'sync' => $sync,
                 'cards' => $cards,
