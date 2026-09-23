@@ -23,6 +23,7 @@ final class PortalDisplay
             'failed' => 'Con error', 'error' => 'Con error', 'published' => 'Publicado',
             'active' => 'Publicado', 'disabled' => 'Despublicado', 'deleted' => 'Eliminado',
             'paused' => 'Pausado', 'closed' => 'Finalizado', 'not_sent' => 'Sin publicar',
+            'not_yet_active' => 'Pendiente de activacion', 'under_review' => 'En revision',
             '' => 'Sin actividad',
         ][$value ?? ''] ?? (string) $value;
     }

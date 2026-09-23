@@ -45,7 +45,7 @@ final class MercadolibreSyncService
             if ($dryRun) {
                 return ['ok' => true, 'dry_run' => true, 'audit' => $audit];
             }
-            $stats = ['ok' => true, 'audit' => $audit, 'processed' => 0, 'success' => 0, 'failed' => 0, 'waiting_quota' => 0];
+            $stats = ['ok' => true, 'audit' => $audit, 'processed' => 0, 'success' => 0, 'failed' => 0, 'waiting_quota' => 0, 'waiting_activation' => 0];
             $contactIssues = MercadolibrePayloadBuilder::contactIssues();
             if ($contactIssues) {
                 $stats['ok'] = false;
@@ -65,6 +65,11 @@ final class MercadolibreSyncService
                     $this->repository->log($ad, true, 200);
                     $stats['success']++;
                 } catch (Throwable $e) {
+                    if ($e->getCode() === 1003) {
+                        $this->repository->waitActivation($ad, $e->getMessage());
+                        $stats['waiting_activation']++;
+                        continue;
+                    }
                     if ($e->getCode() === 1001) {
                         $this->repository->waitQuota($ad, $e->getMessage());
                         $stats['waiting_quota']++;
@@ -170,19 +175,28 @@ final class MercadolibreSyncService
                 if (!in_array($item['status'], ['paused','closed'], true)) {
                     MercadolibreClient::requireSuccess($this->client->update($item['id'], ['status' => 'paused']));
                 }
-                return $this->verify($item['id'], ['paused','closed']);
+                return $this->verify($item['id'], ['paused','closed'], (int) $ad['inmueble_id']);
             }
             if ($item['status'] !== 'closed') {
                 MercadolibreClient::requireSuccess($this->client->update($item['id'], ['status' => 'closed']));
             }
             MercadolibreClient::requireSuccess($this->client->update($item['id'], ['deleted' => true]));
-            return $this->verify($item['id'], ['deleted']);
+            return $this->verify($item['id'], ['deleted'], (int) $ad['inmueble_id']);
         }
         if (!$property || !MercadolibrePayloadBuilder::available($property)) {
             throw new RuntimeException('El inmueble ya no esta disponible. El siguiente cron lo despublicara.');
         }
         if ($item && ($item['status'] === 'closed' || in_array('deleted', $item['sub_status'] ?? [], true))) {
             throw new RuntimeException('El anuncio esta finalizado. No se puede reactivar; requiere una republicacion revisada.');
+        }
+        if ($item && self::awaitingActivation($item)) {
+            throw new RuntimeException('Anuncio creado. Mercado Libre esta procesando su activacion; se verificara sin reenviar las fotos.', 1003);
+        }
+        if ($item && $item['status'] === 'under_review') {
+            throw new RuntimeException('Mercado Libre tiene el anuncio en revision. Revisa sus moderaciones y fotos antes de reintentar.');
+        }
+        if ($item && $item['status'] === 'active' && $ad['target_hash'] !== '' && ($ad['submitted_hash'] ?? '') === $ad['target_hash']) {
+            return 'active';
         }
         $listingType = $item['listing_type_id'] ?? $this->listingType();
         $payload = $this->builder->build($property, $listingType);
@@ -194,6 +208,7 @@ final class MercadolibreSyncService
             }
             $item = MercadolibreClient::requireSuccess($result);
             $this->repository->rememberRemote((int) $ad['inmueble_id'], $item);
+            $this->repository->submitted($ad);
             if ($this->remaining !== null) {
                 $this->remaining[$listingType] = max(0, ($this->remaining[$listingType] ?? 0) - 1);
             }
@@ -202,21 +217,32 @@ final class MercadolibreSyncService
             // A paused ad receives its new data before it becomes visible again.
             MercadolibreClient::requireSuccess($this->client->update($item['id'], $update));
             MercadolibreClient::requireSuccess($this->client->description($item['id'], $payload['description']['plain_text']));
+            $this->repository->submitted($ad);
             if ($item['status'] === 'paused') {
                 MercadolibreClient::requireSuccess($this->client->update($item['id'], ['status' => 'active']));
             }
         }
-        return $this->verify($item['id'], ['active']);
+        return $this->verify($item['id'], ['active'], (int) $ad['inmueble_id']);
     }
 
-    private function verify(string $id, array $expected): string
+    private function verify(string $id, array $expected, int $propertyId): string
     {
         $item = MercadolibreClient::requireSuccess($this->client->get('/items/' . rawurlencode($id)));
+        $this->repository->rememberRemote($propertyId, $item);
         $status = in_array('deleted', $item['sub_status'] ?? [], true) ? 'deleted' : ($item['status'] ?? 'unknown');
+        if (in_array('active', $expected, true) && self::awaitingActivation($item)) {
+            throw new RuntimeException('Anuncio creado. Pendiente de activacion por Mercado Libre; se verificara nuevamente.', 1003);
+        }
         if (!in_array($status, $expected, true)) {
             throw new RuntimeException('Mercado Libre informa estado ' . $status . '; falta confirmar ' . implode('/', $expected) . '.');
         }
         return $status;
+    }
+
+    public static function awaitingActivation(array $item): bool
+    {
+        return ($item['status'] ?? '') === 'not_yet_active'
+            || (($item['status'] ?? '') === 'paused' && in_array('picture_download_pending', $item['sub_status'] ?? [], true));
     }
 
     public function packs(): array

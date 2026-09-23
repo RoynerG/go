@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260922-ops3">
+  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260922-ops4">
 </head>
 <body class="portal-page">
 <?php
@@ -220,7 +220,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
           <?php if ($portalFilter === 'mercadolibre'): ?>
           <label><span>Estado Mercado Libre</span><select name="mercadolibre_estado">
             <option value="">Todos</option>
-            <?php foreach (['not_sent' => 'Sin publicar','active' => 'Publicado','paused' => 'Pausado','closed' => 'Finalizado','deleted' => 'Eliminado'] as $value => $label): ?>
+            <?php foreach (['not_sent' => 'Sin publicar','not_yet_active'=>'Pendiente de activacion','under_review'=>'En revision','active' => 'Publicado','paused' => 'Pausado','closed' => 'Finalizado','deleted' => 'Eliminado'] as $value => $label): ?>
               <option value="<?= $value ?>"<?= $selected('mercadolibre_estado', $value) ?>><?= $label ?></option>
             <?php endforeach; ?>
           </select></label>
@@ -695,6 +695,6 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
     </section>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="<?= htmlspecialchars(\App\Core\Url::to('/panel.js')) ?>?v=20260922-ops3"></script>
+  <script src="<?= htmlspecialchars(\App\Core\Url::to('/panel.js')) ?>?v=20260922-ops4"></script>
 </body>
 </html>

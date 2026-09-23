@@ -126,7 +126,7 @@ final class MercadolibreController
         try {
             $result = (new MercadolibreSyncService())->run(max(1, min(20, (int) Env::get('MERCADOLIBRE_CRON_LIMIT', '10'))));
             Response::json($result + ['message' => 'Mercado Libre: ' . ($result['success'] ?? 0) . ' confirmados, '
-                . ($result['failed'] ?? 0) . ' errores, ' . ($result['waiting_quota'] ?? 0) . ' en espera de cupo.']);
+                . ($result['failed'] ?? 0) . ' errores, ' . ($result['waiting_activation'] ?? 0) . ' pendientes de activacion y ' . ($result['waiting_quota'] ?? 0) . ' en espera de cupo.']);
         } catch (Throwable $e) {
             Response::json(['ok' => false, 'message' => $e->getMessage()], 422);
         }

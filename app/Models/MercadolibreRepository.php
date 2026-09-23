@@ -45,6 +45,13 @@ final class MercadolibreRepository
                 if ((int) ($e->errorInfo[1] ?? 0) !== 1060) throw $e;
             }
         }
+        if (!$this->pdo->query("SHOW COLUMNS FROM mercadolibre_ads LIKE 'submitted_hash'")->fetch()) {
+            try {
+                $this->pdo->exec("ALTER TABLE mercadolibre_ads ADD COLUMN submitted_hash CHAR(64) NOT NULL DEFAULT ''");
+            } catch (\PDOException $e) {
+                if ((int) ($e->errorInfo[1] ?? 0) !== 1060) throw $e;
+            }
+        }
         $this->pdo->exec("CREATE TABLE IF NOT EXISTS mercadolibre_logs (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             inmueble_id BIGINT UNSIGNED NOT NULL, reference_id VARCHAR(191) NOT NULL,
@@ -137,7 +144,7 @@ final class MercadolibreRepository
     public function manual(int $id, string $action): void
     {
         $intent = match ($action) { 'pause' => 'paused', 'delete' => 'deleted', default => 'auto' };
-        $q = $this->pdo->prepare("UPDATE mercadolibre_ads SET intent=?, desired_action=?, sync_status='pending',
+        $q = $this->pdo->prepare("UPDATE mercadolibre_ads SET intent=?, desired_action=?, sync_status='pending', submitted_hash='',
             version=version+1, attempts=0, next_attempt_at=NULL, last_error=NULL, updated_at=NOW() WHERE inmueble_id=?");
         $q->execute([$intent, $action, $id]);
     }
@@ -240,5 +247,18 @@ final class MercadolibreRepository
         $logs = $this->pdo->query("SELECT l.*,i.titulo,'mercadolibre' portal,'Mercado Libre' portal_label
             FROM mercadolibre_logs l LEFT JOIN inmuebles i ON i.id=l.inmueble_id ORDER BY l.id DESC LIMIT 50")->fetchAll();
         return ['queue' => $queue, 'items' => $items, 'logs' => $logs];
+    }
+
+    public function submitted(array $ad): void
+    {
+        $q = $this->pdo->prepare('UPDATE mercadolibre_ads SET submitted_hash=? WHERE inmueble_id=? AND version=?');
+        $q->execute([$ad['target_hash'], $ad['inmueble_id'], $ad['version']]);
+    }
+
+    public function waitActivation(array $ad, string $message): void
+    {
+        $q = $this->pdo->prepare("UPDATE mercadolibre_ads SET sync_status='pending',last_error=?,attempts=0,
+            next_attempt_at=DATE_ADD(NOW(), INTERVAL 2 MINUTE),updated_at=NOW() WHERE inmueble_id=? AND version=?");
+        $q->execute([$message, $ad['inmueble_id'], $ad['version']]);
     }
 }

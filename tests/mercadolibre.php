@@ -39,6 +39,10 @@ $_ENV['MERCADOLIBRE_REDIRECT_URI'] = 'https://example.com/callback';
 check(\App\Core\PortalDisplay::state('active') === 'Publicado', 'Estado remoto traducido');
 check(\App\Core\PortalDisplay::state('synced') === 'Confirmado', 'Cola no se confunde con publicacion');
 check(\App\Core\PortalDisplay::action('sync_error') === 'Validacion del inmueble', 'Error local identificado');
+check(Sync::awaitingActivation(['status'=>'not_yet_active']), 'Creacion asincrona no es un fallo');
+check(Sync::awaitingActivation(['status'=>'paused','sub_status'=>['picture_download_pending']]), 'Fotos pendientes no requieren reactivar manualmente');
+check(!Sync::awaitingActivation(['status'=>'under_review','sub_status'=>['picture_download_pending']]), 'Moderacion real no se oculta como espera');
+check(!Sync::awaitingActivation(['status'=>'paused']), 'Pausa manual no se confunde con descarga de fotos');
 $_ENV['MERCADOLIBRE_DEFAULT_PROPERTY_AGE'] = '';
 check(Builder::propertyAge([]) === null, 'No inventa edad si el valor provisional esta deshabilitado');
 check(Builder::propertyAge(['ano_construccion'=>(int) date('Y')-12]) === 12, 'Antiguedad desde ano de construccion');
@@ -200,10 +204,44 @@ if (in_array('--database', $argv, true)) {
     check($method->invoke($service, $repo->ad(1), $property) === 'active', 'Crear y verificar anuncio');
     check($repo->ad(1)['external_id'] === 'MCO123', 'Guardar id remoto antes de continuar');
     $client->calls = [];
+    $client->replies = [['GET','/items/MCO123',$ok($remote)]];
+    check($method->invoke($service, $repo->ad(1), $property) === 'active', 'Reintento confirma el envio aceptado sin reenviar fotos');
+    check(count($client->calls) === 1 && $client->replies === [], 'Confirmacion solo consulta el anuncio');
+    check(count(array_filter($client->calls, fn ($call) => $call[0] === 'POST' && $call[1] === '/items')) === 0, 'Sin POST duplicado');
+    $repo->manual(1, 'update');
+    check($repo->ad(1)['submitted_hash'] === '', 'Actualizar manualmente fuerza un nuevo envio');
+    $waiting = array_replace($remote, ['status'=>'not_yet_active']);
+    $client->replies = [['GET','/items/MCO123',$ok($remote)], ['PUT','/items/MCO123',$ok($remote)],
+        ['PUT','/items/MCO123/description',$ok([])], ['GET','/items/MCO123',$ok($waiting)]];
+    try {
+        $method->invoke($service, $repo->ad(1), $property);
+        throw new RuntimeException('Falta espera de activacion');
+    } catch (RuntimeException $e) {
+        check($e->getCode() === 1003, 'Actualizacion aceptada espera activacion, no falla');
+        $repo->waitActivation($repo->ad(1), $e->getMessage());
+    }
+    $ad = $repo->ad(1);
+    check($ad['remote_status'] === 'not_yet_active' && $ad['sync_status'] === 'pending', 'Estado remoto y cola distinguen la espera');
+    check((int) $ad['attempts'] === 0 && count($repo->pending(10)) === 0, 'La espera respeta backoff sin consumir intentos');
+    check($ad['submitted_hash'] === $ad['target_hash'] && $ad['synced_hash'] === '', 'Envio aceptado no equivale a confirmado');
+    check($client->replies === [], 'Se verifico el estado despues de actualizar');
+    $client->calls = [];
+    $client->replies = [['GET','/items/MCO123',$ok($waiting)]];
+    rejects(fn () => $method->invoke($service, $ad, $property), 'sin reenviar');
+    check(count($client->calls) === 1 && $client->replies === [], 'Fotos pendientes no se reenvian');
+    $client->replies = [['GET','/items/MCO123',$ok($remote)]];
+    check($method->invoke($service, $ad, $property) === 'active' && $client->replies === [], 'Activacion posterior se confirma solo con GET');
+    $repo->target($ad, str_repeat('b',64), 'update');
     $client->replies = [['GET','/items/MCO123',$ok($remote)], ['PUT','/items/MCO123',$ok($remote)],
         ['PUT','/items/MCO123/description',$ok([])], ['GET','/items/MCO123',$ok($remote)]];
-    check($method->invoke($service, $repo->ad(1), $property) === 'active', 'Reintento con ID actualiza, no crea');
-    check(count(array_filter($client->calls, fn ($call) => $call[0] === 'POST' && $call[1] === '/items')) === 0, 'Sin POST duplicado');
+    check($method->invoke($service, $repo->ad(1), $property) === 'active' && $client->replies === [], 'Cambio real de datos envia una nueva actualizacion');
+    $client->replies = [['GET','/items/MCO123',$ok(array_replace($remote, ['status'=>'under_review']))]];
+    rejects(fn () => $method->invoke($service, $repo->ad(1), $property), 'moderaciones');
+    $oldAd = $repo->ad(1);
+    $repo->manual(1, 'pause');
+    $repo->submitted($oldAd);
+    $repo->waitActivation($oldAd, 'Espera antigua');
+    check($repo->ad(1)['submitted_hash'] === '' && $repo->ad(1)['next_attempt_at'] === null, 'Una espera antigua no altera una pausa concurrente');
     $repo->manual(1, 'pause');
     $client->replies = [['GET','/items/MCO123',$ok($remote)], ['PUT','/items/MCO123',$ok([])], ['GET','/items/MCO123',$ok(array_replace($remote, ['status'=>'paused']))]];
     check($method->invoke($service, $repo->ad(1), $property) === 'paused', 'Pausar y verificar');
@@ -225,6 +263,18 @@ if (in_array('--database', $argv, true)) {
     $pdo->exec('UPDATE mercadolibre_ads SET uncertain=0');
     $repo->fail($ad, 'Creacion incierta con accion concurrente', true);
     check((int) $repo->ad(1)['uncertain'] === 1 && $repo->ad(1)['desired_action'] === 'pause', 'Creacion incierta conserva proteccion tras accion concurrente');
+    $repo->ensure(2, 'TEST-2');
+    $repo->target($repo->ad(2), str_repeat('c',64), 'publish');
+    $newRemote = array_replace($remote, ['id'=>'MCO456','seller_custom_field'=>'TEST-2','status'=>'not_yet_active']);
+    $client->replies = [['GET','/users/123/items/search?sku=TEST-2',$ok(['results'=>[]])],
+        ['POST','/items/validate',$ok([])], ['POST','/items',$ok($newRemote)], ['GET','/items/MCO456',$ok($newRemote)]];
+    try {
+        $method->invoke($service, $repo->ad(2), array_replace($property, ['id'=>2,'reference_id'=>'TEST-2']));
+        throw new RuntimeException('Falta espera al crear');
+    } catch (RuntimeException $e) {
+        check($e->getCode() === 1003, 'Creacion aceptada en espera de activacion');
+    }
+    check($repo->ad(2)['external_id'] === 'MCO456' && $repo->ad(2)['submitted_hash'] === str_repeat('c',64), 'Creacion pendiente conserva ID y contenido enviado');
     check($client->replies === [], 'Todas las respuestas simuladas se utilizaron');
 }
 echo "OK: {$checks} comprobaciones Mercado Libre. No se enviaron solicitudes reales.\n";

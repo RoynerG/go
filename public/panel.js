@@ -1,6 +1,6 @@
 (function () {
   function stateLabel(value) {
-    return ({pending:'En espera',processing:'Procesando',synced:'Confirmado',failed:'Con error',error:'Con error',published:'Publicado',active:'Publicado',disabled:'Despublicado',deleted:'Eliminado',paused:'Pausado',closed:'Finalizado',not_sent:'Sin publicar'})[value] || value || 'Sin actividad';
+    return ({pending:'En espera',processing:'Procesando',synced:'Confirmado',failed:'Con error',error:'Con error',published:'Publicado',active:'Publicado',disabled:'Despublicado',deleted:'Eliminado',paused:'Pausado',closed:'Finalizado',not_sent:'Sin publicar',not_yet_active:'Pendiente de activacion',under_review:'En revision'})[value] || value || 'Sin actividad';
   }
   var modal = document.getElementById('property-modal');
   var currentDetail = null;

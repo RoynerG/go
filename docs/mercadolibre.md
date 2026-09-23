@@ -33,16 +33,16 @@
    php cron/mercadolibre-sync.php --dry-run
    ```
 
-En **Conexiones y cron**, el diagnostico enumera los nombres de las variables
+En **Conexiones**, el diagnostico enumera los nombres de las variables
 faltantes o invalidas, nunca sus valores. Client ID y Client Secret no bastan:
 tambien se necesitan el Redirect URI y la clave TOKEN_KEY de 32 bytes.
 Despues se autoriza la cuenta con **Conectar cuenta**. La clave TOKEN_KEY es
 propia de esta instalacion, no se obtiene de Mercado Libre ni se sustituye por
 el Client Secret.
 
-**Cola de publicaciones** muestra tareas pendientes, en proceso y fallidas por
+**Operaciones / Cola actual** muestra tareas pendientes, en proceso y fallidas por
 inmueble y portal; se consulta de nuevo cada 15 segundos sin perder sus filtros.
-**Historial de operaciones** conserva resultados ya registrados. La ultima
+**Operaciones / Historial** conserva resultados ya registrados. La ultima
 confirmacion de un anuncio no demuestra por si sola que el cron siga programado
 en el hosting. Los numeros de publicaciones son los estados registrados en la
 integracion, no una consulta en tiempo real al inventario de cada portal.
@@ -82,11 +82,19 @@ mismo lote. El refresh token tambien se renueva bajo bloqueo porque es de un uso
   automaticamente.
 
 El estado publicado se confirma consultando el item remoto, no solo por el envio
-de la solicitud. Los errores se muestran por inmueble, en Monitor, Estados y
-errores y Logs. El panel de Mercado Libre refresca sus estados cada 15 segundos.
+de la solicitud. Los errores se muestran por inmueble en Operaciones, separados
+de la cola y del historial. El panel refresca sus estados cada 15 segundos.
 Hay hasta cinco intentos con espera progresiva; una accion manual permite
 reintentar. Una creacion de resultado incierto se busca por codigo antes de
 continuar y nunca se repite ciegamente.
+
+`not_yet_active` y `paused` con `picture_download_pending` son espera de
+activacion, no confirmacion de publicado ni error definitivo. Se consulta otra
+vez despues de dos minutos, sin consumir los intentos de error. Un hash separado
+registra los datos ya aceptados para no reenviar las mismas fotos al confirmar.
+Una modificacion real o una actualizacion manual permite enviar datos nuevos.
+`under_review` sigue mostrandose como un problema que requiere revisar la
+moderacion. Ver [moderaciones con pausado](https://developers.mercadolibre.com.co/es_ar/moderaciones-con-pausado).
 
 ## Paquete mixto
 
