@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Core\Database;
 use App\Core\Env;
 use RuntimeException;
 
@@ -53,6 +54,7 @@ final class MercadolibrePayloadBuilder
         $source = json_decode((string) ($property['source_payload'] ?? '{}'), true) ?: [];
         $data['source_attributes'] = array_intersect_key($source, array_flip(['ambientes','rooms','edad_inmueble','antiguedad','mercadolibre_attributes']));
         $data['property_age'] = self::propertyAge($property);
+        $data['catalog_neighborhood_id'] = self::catalogNeighborhood((string) ($property['ubicacion']['barrio'] ?? ''))['id'] ?? '';
         foreach (['CONTACT_NAME','CONTACT_EMAIL','CONTACT_PHONE','CONTACT_WHATSAPP','DUAL_OFFER','CATEGORY_MAP','LOCATION_MAP'] as $key) {
             $data['config_' . $key] = Env::get('MERCADOLIBRE_' . $key, '');
         }
@@ -165,7 +167,13 @@ final class MercadolibrePayloadBuilder
         $cityData = $this->client->catalog('/classified_locations/cities/' . rawurlencode($city['id']));
         $barrio = self::normalize((string) ($location['barrio'] ?? ''));
         $map = json_decode(Env::get('MERCADOLIBRE_LOCATION_MAP', '{}'), true, 512, JSON_THROW_ON_ERROR);
-        if (!empty($map[$barrio])) {
+        $catalogNeighborhood = self::catalogNeighborhood($barrio);
+        if (!empty($catalogNeighborhood['id'])) {
+            $neighborhood = $this->client->catalog('/classified_locations/neighborhoods/' . rawurlencode((string) $catalogNeighborhood['id']));
+            if (($neighborhood['city']['id'] ?? '') !== $city['id']) {
+                throw new RuntimeException('El barrio homologado en la tabla no pertenece a la ciudad del inmueble.');
+            }
+        } elseif (!empty($map[$barrio])) {
             $neighborhood = $this->client->catalog('/classified_locations/neighborhoods/' . rawurlencode($map[$barrio]));
             if (($neighborhood['city']['id'] ?? '') !== $city['id']) {
                 throw new RuntimeException('El barrio homologado no pertenece a la ciudad del inmueble.');
@@ -180,6 +188,34 @@ final class MercadolibrePayloadBuilder
         return ['address_line' => $address, 'latitude' => $lat, 'longitude' => $lon,
             'country' => ['id' => 'CO'], 'state' => ['id' => $state['id']], 'city' => ['id' => $city['id']],
             'neighborhood' => ['id' => $neighborhood['id']]];
+    }
+
+    public static function catalogNeighborhood(string $barrio): ?array
+    {
+        $barrio = self::normalize($barrio);
+        if ($barrio === '') {
+            return null;
+        }
+
+        try {
+            $statement = Database::pdo()->prepare(
+                'SELECT mercadolibre_neighborhood_id AS id,
+                        mercadolibre_neighborhood_name AS name,
+                        mercadolibre_city_id AS city_id,
+                        mercadolibre_state_id AS state_id
+                 FROM app_barrios_catalog
+                 WHERE barrio_norm = :barrio_norm
+                   AND activo = 1
+                   AND mercadolibre_neighborhood_id IS NOT NULL
+                   AND mercadolibre_neighborhood_id <> ""
+                 LIMIT 1'
+            );
+            $statement->execute(['barrio_norm' => $barrio]);
+            $row = $statement->fetch();
+            return $row ?: null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function attributes(array $property, string $categoryId): array

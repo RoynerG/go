@@ -35,6 +35,7 @@ $stats = [
     'source' => count($items),
     'catalog_upserts' => 0,
     'fincaraiz_mappings' => 0,
+    'mercadolibre_mappings' => 0,
     'locations_completed' => 0,
     'skipped' => 0,
 ];
@@ -75,6 +76,10 @@ foreach ($items as $item) {
         'fincaraiz_location_id' => $fincaraizLocationId,
         'fincaraiz_location_name' => $fincaraizLocationName,
         'fincaraiz_location_type' => $fincaraizLocationType,
+        'mercadolibre_state_id' => trim((string) ($item['mercadolibre_state_id'] ?? '')),
+        'mercadolibre_city_id' => trim((string) ($item['mercadolibre_city_id'] ?? '')),
+        'mercadolibre_neighborhood_id' => trim((string) ($item['mercadolibre_neighborhood_id'] ?? '')),
+        'mercadolibre_neighborhood_name' => trim((string) ($item['mercadolibre_neighborhood_name'] ?? '')),
         'source_cct_id' => (int) ($item['_ID'] ?? 0) ?: null,
         'source_updated_at' => normalizeDate((string) ($item['cct_modified'] ?? '')),
     ];
@@ -90,10 +95,12 @@ try {
     $catalogSql = "INSERT INTO app_barrios_catalog
         (barrio_nombre, barrio_norm, latitud, longitud, ciudad, departamento, pais, codigo_postal,
          ciencuadras_locality_id, fincaraiz_location_id, fincaraiz_location_name, fincaraiz_location_type,
+         mercadolibre_state_id, mercadolibre_city_id, mercadolibre_neighborhood_id, mercadolibre_neighborhood_name,
          source_cct_id, source_updated_at, activo, created_at, updated_at)
         VALUES
         (:barrio_nombre, :barrio_norm, :latitud, :longitud, :ciudad, :departamento, :pais, :codigo_postal,
          :ciencuadras_locality_id, :fincaraiz_location_id, :fincaraiz_location_name, :fincaraiz_location_type,
+         :mercadolibre_state_id, :mercadolibre_city_id, :mercadolibre_neighborhood_id, :mercadolibre_neighborhood_name,
          :source_cct_id, :source_updated_at, 1, NOW(), NOW())
         ON DUPLICATE KEY UPDATE
           barrio_nombre = VALUES(barrio_nombre),
@@ -107,6 +114,10 @@ try {
           fincaraiz_location_id = IF(VALUES(fincaraiz_location_id) <> '', VALUES(fincaraiz_location_id), fincaraiz_location_id),
           fincaraiz_location_name = IF(VALUES(fincaraiz_location_name) <> '', VALUES(fincaraiz_location_name), fincaraiz_location_name),
           fincaraiz_location_type = IF(VALUES(fincaraiz_location_type) <> '', VALUES(fincaraiz_location_type), fincaraiz_location_type),
+          mercadolibre_state_id = IF(VALUES(mercadolibre_state_id) <> '', VALUES(mercadolibre_state_id), mercadolibre_state_id),
+          mercadolibre_city_id = IF(VALUES(mercadolibre_city_id) <> '', VALUES(mercadolibre_city_id), mercadolibre_city_id),
+          mercadolibre_neighborhood_id = IF(VALUES(mercadolibre_neighborhood_id) <> '', VALUES(mercadolibre_neighborhood_id), mercadolibre_neighborhood_id),
+          mercadolibre_neighborhood_name = IF(VALUES(mercadolibre_neighborhood_name) <> '', VALUES(mercadolibre_neighborhood_name), mercadolibre_neighborhood_name),
           source_cct_id = COALESCE(VALUES(source_cct_id), source_cct_id),
           source_updated_at = COALESCE(VALUES(source_updated_at), source_updated_at),
           activo = 1,
@@ -203,6 +214,10 @@ try {
             'fincaraiz_location_id' => $alias['location_id'],
             'fincaraiz_location_name' => $alias['location_name'],
             'fincaraiz_location_type' => $alias['location_type'],
+            'mercadolibre_state_id' => '',
+            'mercadolibre_city_id' => '',
+            'mercadolibre_neighborhood_id' => '',
+            'mercadolibre_neighborhood_name' => '',
             'source_cct_id' => $source['source_cct_id'] ?? null,
             'source_updated_at' => $source['source_updated_at'] ?? null,
         ];
@@ -221,6 +236,36 @@ try {
         $stats['fincaraiz_mappings']++;
     }
 
+    $mercadolibreLocations = [
+        'Bocagrande' => ['TUNPQkJPQzQ2MTUyMA', 'Bocagrande'],
+        'Castillogrande' => ['TUNPQkNBUzE3MjYwMw', 'Castillogrande'],
+        'Manga' => ['TUNPQk1BTjM1NzExMg', 'Manga'],
+        'El Cabrero' => ['TUNPQkVMQzQ2NjA3OA', 'El Cabrero'],
+        'Cabrero' => ['TUNPQkVMQzQ2NjA3OA', 'El Cabrero'],
+        'Crespo' => ['TUNPQkNSRTk2NjgzOQ', 'Crespo'],
+        'Marbella' => ['TUNPQk1BUjI3MTgyMw', 'Marbella'],
+        'Laguito' => ['TUNPQkxBRzUzNjU0OQ', 'Laguito'],
+        'El Laguito' => ['TUNPQkxBRzUzNjU0OQ', 'Laguito'],
+        'Getsemani' => ['TUNPQkdFVDUxMTIwNA', 'Getsemani'],
+        'Getsemaní' => ['TUNPQkdFVDUxMTIwNA', 'Getsemani'],
+        'San Diego' => ['TUNPQlNBTjM1MzQ2Ng', 'San Diego'],
+        'Pie de la Popa' => ['TUNPQlBJRTUzMzAwMQ', 'Pie de la Popa'],
+        'Chambacu' => ['TUNPQkNIQTUxOTMyNw', 'Chambacú'],
+        'Chambacú' => ['TUNPQkNIQTUxOTMyNw', 'Chambacú'],
+        'Centro' => ['TUNPQkVMQzE4ODYyNA', 'El Centro'],
+        'El Centro' => ['TUNPQkVMQzE4ODYyNA', 'El Centro'],
+        'Centro historico' => ['TUNPQkVMQzE4ODYyNA', 'El Centro'],
+        'Centro histórico' => ['TUNPQkVMQzE4ODYyNA', 'El Centro'],
+        'Ciudad amurallada' => ['TUNPQkVMQzE4ODYyNA', 'El Centro'],
+        'La Boquilla' => ['TUNPQkNPUjg2NDMyMA', 'Corregimiento La Boquilla'],
+        'Boquilla' => ['TUNPQkNPUjg2NDMyMA', 'Corregimiento La Boquilla'],
+        'Morros' => ['TUNPQkNPUjg2NDMyMA', 'Corregimiento La Boquilla'],
+        'Zona norte' => ['TUNPQkNPUjg2NDMyMA', 'Corregimiento La Boquilla'],
+        'Cielo mar' => ['TUNPQkNPUjg2NDMyMA', 'Corregimiento La Boquilla'],
+        'Cielomar' => ['TUNPQkNPUjg2NDMyMA', 'Corregimiento La Boquilla'],
+    ];
+    seedMercadolibreLocations($pdo, $catalogStmt, $catalogRows, $mercadolibreLocations, $apply, $stats);
+
     if ($apply) {
         $stats['locations_completed'] = completeInmuebleLocations($pdo, $catalogRows);
         $pdo->commit();
@@ -236,6 +281,50 @@ try {
 echo ($apply ? 'APLICADO' : 'SIMULACION') . PHP_EOL;
 foreach ($stats as $key => $value) {
     echo $key . ': ' . $value . PHP_EOL;
+}
+
+function seedMercadolibreLocations(PDO $pdo, PDOStatement $catalogStmt, array &$catalogRows, array $locations, bool $apply, array &$stats): void
+{
+    $stateId = 'TUNPUEJPTHI1Mzlk';
+    $cityId = 'TUNPQ0NBUjcwNTYz';
+
+    foreach ($locations as $barrio => [$neighborhoodId, $neighborhoodName]) {
+        $key = normalizeBarrio($barrio);
+        $source = $catalogRows[$key] ?? null;
+        if (!$source) {
+            $lookup = $pdo->prepare('SELECT * FROM app_barrios_catalog WHERE barrio_norm = :barrio_norm LIMIT 1');
+            $lookup->execute(['barrio_norm' => $key]);
+            $source = $lookup->fetch() ?: [];
+        }
+
+        $row = [
+            'barrio_nombre' => $barrio,
+            'barrio_norm' => $key,
+            'latitud' => (string) ($source['latitud'] ?? ''),
+            'longitud' => (string) ($source['longitud'] ?? ''),
+            'ciudad' => (string) ($source['ciudad'] ?? 'Cartagena'),
+            'departamento' => (string) ($source['departamento'] ?? 'Bolivar'),
+            'pais' => (string) ($source['pais'] ?? 'Colombia'),
+            'codigo_postal' => (string) ($source['codigo_postal'] ?? ''),
+            'ciencuadras_locality_id' => (string) ($source['ciencuadras_locality_id'] ?? ''),
+            'fincaraiz_location_id' => (string) ($source['fincaraiz_location_id'] ?? ''),
+            'fincaraiz_location_name' => (string) ($source['fincaraiz_location_name'] ?? ''),
+            'fincaraiz_location_type' => (string) ($source['fincaraiz_location_type'] ?? ''),
+            'mercadolibre_state_id' => $stateId,
+            'mercadolibre_city_id' => $cityId,
+            'mercadolibre_neighborhood_id' => $neighborhoodId,
+            'mercadolibre_neighborhood_name' => $neighborhoodName,
+            'source_cct_id' => $source['source_cct_id'] ?? null,
+            'source_updated_at' => $source['source_updated_at'] ?? null,
+        ];
+
+        if ($apply) {
+            $catalogStmt->execute($row);
+        }
+        $catalogRows[$key] = $row;
+        $stats['catalog_upserts']++;
+        $stats['mercadolibre_mappings']++;
+    }
 }
 
 function completeInmuebleLocations(PDO $pdo, array $catalogRows): int

@@ -117,7 +117,15 @@ venta/arriendo, consulta atributos y utiliza ubicaciones de `classified_location
 Las coincidencias deben ser exactas; no se inventan barrios o categorias.
 Si falta un cruce, se muestra el nombre faltante en el error del inmueble.
 
-Se pueden configurar excepciones como JSON en `.env`:
+La fuente principal de homologacion de barrios es `app_barrios_catalog`.
+El importador `tools/import-barrios.php --apply` crea/actualiza las columnas
+`mercadolibre_state_id`, `mercadolibre_city_id`,
+`mercadolibre_neighborhood_id` y `mercadolibre_neighborhood_name`, y siembra
+cruces conocidos de Cartagena como Bocagrande, Castillogrande, Manga, Centro,
+Chambacu, Cabrero, La Boquilla, Morros, Zona norte y Cielo mar.
+
+Tambien se pueden configurar excepciones como JSON en `.env`; esto queda como
+respaldo cuando todavia no existe el cruce en la tabla:
 
 ```dotenv
 MERCADOLIBRE_CATEGORY_MAP={"apartamento:sale":"ID_MCO_REAL","apartamento:rent":"ID_MCO_REAL"}
@@ -125,8 +133,9 @@ MERCADOLIBRE_LOCATION_MAP={"morros":"ID_BARRIO_REAL_DE_ZONA_NORTE"}
 ```
 
 Los IDs del ejemplo son marcadores, no valores para copiar a produccion. Verificar
-los IDs en la API de Mercado Libre. Un ID de Finca Raiz no sirve aqui. Morros puede
-homologarse al barrio oficial de Zona Norte solo si pertenece a la ciudad correcta.
+los IDs en la API de Mercado Libre. Un ID de Finca Raiz no sirve aqui. Morros,
+Zona norte y Cielo mar se homologan en la tabla al barrio oficial
+`Corregimiento La Boquilla` para Cartagena.
 No se deduce el numero de ambientes a partir de habitaciones; los atributos
 obligatorios sin un campo fuente generan un error para completar los datos.
 El payload de WordPress puede incluir `ambientes` (o `rooms`) y un objeto
@@ -178,4 +187,7 @@ solo actualiza la cola: no publica inmediatamente ni borra una pausa manual.
 La conversion respeta el tipo y la unidad que devuelve el catalogo de
 [categorias y atributos de Mercado Libre](https://developers.mercadolibre.com.co/en_us/introduction-products/categories-and-attributes).
 No se inventan equivalencias geograficas: los barrios sin coincidencia
-exacta requieren `MERCADOLIBRE_LOCATION_MAP` con un ID valido de la ciudad.
+exacta requieren un cruce en `app_barrios_catalog` o, temporalmente,
+`MERCADOLIBRE_LOCATION_MAP` con un ID valido de la ciudad. Cambiar el cruce
+de la tabla entra en el `fingerprint`, por lo que el cron puede reencolar el
+inmueble sin editarlo manualmente.

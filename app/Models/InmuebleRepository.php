@@ -1444,7 +1444,11 @@ final class InmuebleRepository
         $this->ensureColumn('app_barrios_catalog', 'fincaraiz_location_id', 'VARCHAR(100) DEFAULT NULL AFTER ciencuadras_locality_id');
         $this->ensureColumn('app_barrios_catalog', 'fincaraiz_location_name', 'VARCHAR(220) DEFAULT NULL AFTER fincaraiz_location_id');
         $this->ensureColumn('app_barrios_catalog', 'fincaraiz_location_type', 'VARCHAR(80) DEFAULT NULL AFTER fincaraiz_location_name');
-        $this->ensureColumn('app_barrios_catalog', 'source_cct_id', 'BIGINT UNSIGNED DEFAULT NULL AFTER fincaraiz_location_type');
+        $this->ensureColumn('app_barrios_catalog', 'mercadolibre_state_id', 'VARCHAR(100) DEFAULT NULL AFTER fincaraiz_location_type');
+        $this->ensureColumn('app_barrios_catalog', 'mercadolibre_city_id', 'VARCHAR(100) DEFAULT NULL AFTER mercadolibre_state_id');
+        $this->ensureColumn('app_barrios_catalog', 'mercadolibre_neighborhood_id', 'VARCHAR(100) DEFAULT NULL AFTER mercadolibre_city_id');
+        $this->ensureColumn('app_barrios_catalog', 'mercadolibre_neighborhood_name', 'VARCHAR(220) DEFAULT NULL AFTER mercadolibre_neighborhood_id');
+        $this->ensureColumn('app_barrios_catalog', 'source_cct_id', 'BIGINT UNSIGNED DEFAULT NULL AFTER mercadolibre_neighborhood_name');
         $this->ensureColumn('app_barrios_catalog', 'source_updated_at', 'DATETIME DEFAULT NULL AFTER source_cct_id');
         $this->ensureCaracteristicasTypes();
         $this->ensureFincaraizTables();
