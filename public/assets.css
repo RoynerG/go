@@ -2556,3 +2556,19 @@ body.modal-open {
     text-align: left;
   }
 }
+/* Mercado Libre uses the existing panel layout and table controls. */
+.portal-status-row.is-mercadolibre { border-left: 3px solid #d6a700; background: #fffceb; }
+.portal-badge.is-mercadolibre { background: #fff2ad; color: #594500; }
+.portal-status-row.is-mercadolibre .property-error { grid-column: 1 / -1; margin: 0; overflow-wrap: anywhere; }
+.ml-board .ops-heading { flex-wrap: wrap; gap: 12px; }
+.ml-board .ops-heading form { margin: 0; }
+.ml-board .ops-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ml-board button:disabled { opacity: .5; cursor: not-allowed; }
+.ml-board details { margin-top: 16px; }
+.ml-board summary { cursor: pointer; font-weight: 600; }
+.ml-activity-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 620px; }
+.ml-activity-table th, .ml-activity-table td { padding: 10px; text-align: left; border-bottom: 1px solid #e1e5eb; overflow-wrap: anywhere; }
+.ml-activity-table td:first-child { min-width: 180px; }
+.ml-activity-table td:last-child { max-width: 340px; }
+.theme-dark .portal-status-row.is-mercadolibre { background: #363324; }
+@media (max-width: 640px) { .ml-board .ops-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

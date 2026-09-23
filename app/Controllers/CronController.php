@@ -13,6 +13,19 @@ use App\Services\ProppitSyncService;
 
 final class CronController
 {
+    public function syncMercadolibre(): void
+    {
+        if (!$this->authorized()) {
+            Response::json(['ok' => false, 'error' => 'No autorizado'], 401);
+            return;
+        }
+        try {
+            Response::json((new \App\Services\MercadolibreSyncService())->run(10));
+        } catch (\Throwable $e) {
+            Response::json(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
     public function sync(): void
     {
         if (!$this->authorized()) {
@@ -54,6 +67,15 @@ final class CronController
         $fincaraizRemote = $fincaraizService->reconcileRemoteListings();
         $fincaraizAudit = $repository->refreshFincaraizQueueFromInmuebles();
 
+        $mercadolibre = ['status' => 'disabled'];
+        if (Env::bool('MERCADOLIBRE_ENABLED')) {
+            try {
+                $mercadolibre = (new \App\Services\MercadolibreSyncService())->run(10);
+            } catch (\Throwable $e) {
+                $mercadolibre = ['ok' => false, 'error' => $e->getMessage()];
+            }
+        }
+
         Response::json([
             'ok' => true,
             'proppit' => [
@@ -65,6 +87,7 @@ final class CronController
                 'audit' => $fincaraizAudit,
                 'sync' => $fincaraizService->run(20),
             ],
+            'mercadolibre' => $mercadolibre,
         ]);
     }
 

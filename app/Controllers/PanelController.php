@@ -58,6 +58,14 @@ final class PanelController
     private function portalStatusFilters(string $page): array
     {
         $portal = trim((string) ($_GET['portal'] ?? 'proppit'));
+        if ($portal === 'mercadolibre') {
+            return match ($page) {
+                'publicados' => ['mercadolibre_estado' => 'active'],
+                'eliminados' => ['mercadolibre_estado' => 'deleted'],
+                'errores' => ['mercadolibre_cola' => 'failed'],
+                default => [],
+            };
+        }
         if ($portal === 'fincaraiz') {
             return match ($page) {
                 'publicados' => ['fincaraiz_estado' => 'active'],
@@ -94,7 +102,7 @@ final class PanelController
                 'rows' => $rows,
                 'filters' => $filters,
                 'options' => $repository->filterOptions(),
-                'operation' => $repository->operationSummary(),
+                'operation' => $this->operation($repository),
                 'activePage' => $activePage,
                 'flash' => $this->pullFlash(),
                 'pagination' => [
@@ -126,7 +134,7 @@ final class PanelController
                 'rows' => [],
                 'filters' => [],
                 'options' => $repository->filterOptions(),
-                'operation' => $repository->operationSummary(),
+                'operation' => $this->operation($repository),
                 'activePage' => $activePage,
                 'flash' => $this->pullFlash(),
                 'pagination' => [
@@ -468,6 +476,8 @@ final class PanelController
             'marcado' => trim((string) ($_GET['marcado'] ?? '')),
             'proppit_estado' => trim((string) ($_GET['proppit_estado'] ?? '')),
             'fincaraiz_estado' => trim((string) ($_GET['fincaraiz_estado'] ?? '')),
+            'mercadolibre_estado' => trim((string) ($_GET['mercadolibre_estado'] ?? '')),
+            'mercadolibre_cola' => trim((string) ($_GET['mercadolibre_cola'] ?? '')),
             'portal' => trim((string) ($_GET['portal'] ?? '')),
         ];
     }
@@ -475,6 +485,28 @@ final class PanelController
     private function flash(string $type, string $message): void
     {
         $_SESSION['panel_flash'] = ['type' => $type, 'message' => $message];
+    }
+
+    private function operation(InmuebleRepository $repository): array
+    {
+        $operation = $repository->operationSummary();
+        $mlRepo = new \App\Models\MercadolibreRepository();
+        $ml = $mlRepo->overview();
+        $operation['portals']['mercadolibre'] = $ml;
+        $operation['mercadolibre_connected'] = $mlRepo->account() !== null;
+        $labels = ['publish' => 'Publicar', 'update' => 'Actualizar', 'pause' => 'Pausar', 'delete' => 'Eliminar definitivamente'];
+        foreach ($ml['items'] as $item) {
+            $item += ['portada_url' => '', 'direccion' => '', 'price_label' => '', 'specs_label' => '',
+                'action_label' => $labels[$item['desired_action']] ?? $item['desired_action']];
+            if (in_array($item['sync_status'], ['pending','processing','failed'], true)) {
+                $operation['queue_items'][] = $item;
+            }
+            $group = $item['sync_status'] === 'failed' ? 'errores' : (in_array($item['remote_status'], ['paused','closed','deleted'], true) ? 'eliminados' : 'publicados');
+            if ($item['sync_status'] === 'failed' || in_array($item['remote_status'], ['active','paused','closed','deleted'], true)) {
+                $operation['state_summary'][$group][] = $item;
+            }
+        }
+        return $operation;
     }
 
     private function pullFlash(): ?array

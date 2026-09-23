@@ -15,6 +15,7 @@ final class InmuebleRepository
     {
         $this->pdo = Database::pdo();
         $this->ensureOptionalSchema();
+        (new MercadolibreRepository($this->pdo))->migrate();
     }
 
     public function upsertFromPayload(array $payload): int
@@ -502,10 +503,14 @@ final class InmuebleRepository
                     f.sync_status AS fincaraiz_sync_status, f.external_id AS fincaraiz_external_id,
                     f.external_url AS fincaraiz_external_url, f.last_error AS fincaraiz_last_error,
                     f.last_synced_at AS fincaraiz_last_synced_at
+                    , ml.remote_status AS mercadolibre_remote_status, ml.sync_status AS mercadolibre_sync_status,
+                    ml.desired_action AS mercadolibre_desired_action, ml.last_error AS mercadolibre_last_error,
+                    ml.listing_type_id AS mercadolibre_listing_type
              FROM inmuebles i
              LEFT JOIN inmueble_ubicaciones u ON u.inmueble_id = i.id
              LEFT JOIN proppit_ads p ON p.inmueble_id = i.id
              LEFT JOIN fincaraiz_ads f ON f.inmueble_id = i.id
+             LEFT JOIN mercadolibre_ads ml ON ml.inmueble_id = i.id
              " . ($where ? 'WHERE ' . implode(' AND ', $where) : '') . "
              ORDER BY i.updated_at DESC
              LIMIT :limit OFFSET :offset";
@@ -536,6 +541,7 @@ final class InmuebleRepository
              LEFT JOIN inmueble_ubicaciones u ON u.inmueble_id = i.id
              LEFT JOIN proppit_ads p ON p.inmueble_id = i.id
              LEFT JOIN fincaraiz_ads f ON f.inmueble_id = i.id
+             LEFT JOIN mercadolibre_ads ml ON ml.inmueble_id = i.id
              " . ($where ? 'WHERE ' . implode(' AND ', $where) : '');
 
         $statement = $this->pdo->prepare($sql);
@@ -1258,8 +1264,10 @@ final class InmuebleRepository
             $params['codigo'] = '%' . $filters['codigo'] . '%';
         }
         if (($filters['direccion'] ?? '') !== '') {
-            $where[] = '(u.direccion LIKE :direccion OR u.barrio LIKE :direccion OR i.titulo LIKE :direccion)';
+            $where[] = '(u.direccion LIKE :direccion OR u.barrio LIKE :search_barrio OR i.titulo LIKE :search_titulo)';
             $params['direccion'] = '%' . $filters['direccion'] . '%';
+            $params['search_barrio'] = $params['direccion'];
+            $params['search_titulo'] = $params['direccion'];
         }
         foreach (['tipo_inmueble', 'categoria', 'destinacion'] as $field) {
             if (($filters[$field] ?? '') !== '') {
@@ -1272,10 +1280,14 @@ final class InmuebleRepository
             $params['barrio'] = $filters['barrio'];
         }
         if (($filters['marcado'] ?? '') === 'si') {
-            $where[] = 'i.publicar_proppit = 1';
+            $where[] = ($filters['portal'] ?? '') === 'mercadolibre'
+                ? "COALESCE(ml.intent, 'auto') = 'auto' AND i.estado = 'disponible'"
+                : (($filters['portal'] ?? '') === 'fincaraiz' ? 'i.publicar_fincaraiz = 1' : 'i.publicar_proppit = 1');
         }
         if (($filters['marcado'] ?? '') === 'no') {
-            $where[] = 'i.publicar_proppit = 0';
+            $where[] = ($filters['portal'] ?? '') === 'mercadolibre'
+                ? "(COALESCE(ml.intent, 'auto') <> 'auto' OR i.estado <> 'disponible')"
+                : (($filters['portal'] ?? '') === 'fincaraiz' ? 'i.publicar_fincaraiz = 0' : 'i.publicar_proppit = 0');
         }
         if (($filters['proppit_estado'] ?? '') !== '') {
             $where[] = 'p.remote_status = :proppit_estado';
@@ -1292,6 +1304,14 @@ final class InmuebleRepository
         if (($filters['fincaraiz_action'] ?? '') !== '') {
             $where[] = 'f.desired_action = :fincaraiz_action';
             $params['fincaraiz_action'] = $filters['fincaraiz_action'];
+        }
+        if (($filters['mercadolibre_estado'] ?? '') !== '') {
+            $where[] = 'COALESCE(ml.remote_status, \'not_sent\') = :mercadolibre_estado';
+            $params['mercadolibre_estado'] = $filters['mercadolibre_estado'];
+        }
+        if (($filters['mercadolibre_cola'] ?? '') !== '') {
+            $where[] = 'ml.sync_status = :mercadolibre_cola';
+            $params['mercadolibre_cola'] = $filters['mercadolibre_cola'];
         }
         if (($filters['portal'] ?? '') === 'proppit') {
             $where[] = "(i.publicar_proppit = 1 OR p.remote_status IS NOT NULL AND p.remote_status <> 'not_sent')";

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260915-2">
+  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260922-ml1">
 </head>
 <body class="portal-page">
 <?php
@@ -26,6 +26,7 @@ $operation = $operation ?? ['queue' => [], 'logs' => []];
 $portalOps = $operation['portals'] ?? [];
 $queue = $portalOps['proppit']['queue'] ?? $operation['queue'] ?? [];
 $fincaraizQueue = $portalOps['fincaraiz']['queue'] ?? [];
+$mlQueue = $portalOps['mercadolibre']['queue'] ?? [];
 $queueItems = $operation['queue_items'] ?? [];
 $stateSummary = $operation['state_summary'] ?? ['publicados' => [], 'eliminados' => [], 'errores' => []];
 $fincaraizQuota = (int) ($fincaraizQueue['quota'] ?? (\App\Core\Env::get('FINCARAIZ_QUOTA', '50') ?: 50));
@@ -37,11 +38,14 @@ $statsFincaraizPaused = (int) ($fincaraizQueue['paused'] ?? 0);
 $statsPending = (int) ($queue['pending'] ?? 0) + (int) ($queue['processing'] ?? 0) + (int) ($fincaraizQueue['pending'] ?? 0) + (int) ($fincaraizQueue['processing'] ?? 0);
 $statsUnpublished = max(0, $statsTotal - $statsPublished);
 $statsErrors = (int) ($queue['failed'] ?? 0) + (int) ($queue['remote_errors'] ?? 0) + (int) ($fincaraizQueue['failed'] ?? 0) + (int) ($fincaraizQueue['remote_errors'] ?? 0);
+$statsPending += (int) ($mlQueue['pending'] ?? 0) + (int) ($mlQueue['processing'] ?? 0);
+$statsErrors += (int) ($mlQueue['failed'] ?? 0);
 $logs = $operation['logs'] ?? [];
 $fincaraizLogs = $portalOps['fincaraiz']['logs'] ?? [];
 $combinedLogs = array_merge(
   array_map(fn ($log) => $log + ['portal' => 'proppit', 'portal_label' => 'Proppit'], $logs),
-  array_map(fn ($log) => $log + ['portal' => 'fincaraiz', 'portal_label' => 'Finca Raiz'], $fincaraizLogs)
+  array_map(fn ($log) => $log + ['portal' => 'fincaraiz', 'portal_label' => 'Finca Raiz'], $fincaraizLogs),
+  $portalOps['mercadolibre']['logs'] ?? []
 );
 usort($combinedLogs, fn ($a, $b) => strcmp((string) ($b['created_at'] ?? ''), (string) ($a['created_at'] ?? '')));
 $activePage = $activePage ?? 'inmuebles';
@@ -87,8 +91,8 @@ $portalFilter = (string) ($filters['portal'] ?? '');
 if ($portalFilter === '' && in_array($activePage, ['publicados', 'eliminados', 'errores'], true)) {
   $portalFilter = 'proppit';
 }
-$actionPortal = $portalFilter === 'fincaraiz' ? 'fincaraiz' : 'proppit';
-$actionPortalLabel = $actionPortal === 'fincaraiz' ? 'Finca Raiz' : 'Proppit';
+$actionPortal = in_array($portalFilter, ['fincaraiz','mercadolibre'], true) ? $portalFilter : 'proppit';
+$actionPortalLabel = ['fincaraiz' => 'Finca Raiz', 'mercadolibre' => 'Mercado Libre', 'proppit' => 'Proppit'][$actionPortal];
 $from = $pagination['total'] > 0 ? (($pagination['page'] - 1) * $pagination['per_page']) + 1 : 0;
 $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
 ?>
@@ -112,6 +116,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
         <strong>Colas activas</strong>
         <span>Proppit: <?= (int) ($queue['pending'] ?? 0) ?> pendientes · <?= (int) ($queue['failed'] ?? 0) ?> fallidos</span>
         <span>Finca Raiz: <?= (int) ($fincaraizQueue['pending'] ?? 0) ?> pendientes · <?= $statsFincaraizPublished ?>/<?= $fincaraizQuota ?> activos</span>
+        <span>Mercado Libre: <b data-ml-metric="pending"><?= (int) ($mlQueue['pending'] ?? 0) ?></b> pendientes</span>
         <span><?= $statsFincaraizPaused ?> desactivados · <?= $fincaraizQuotaUsed ?> marcados para cupo</span>
       </section>
     </aside>
@@ -139,7 +144,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
           <?php if ($isListPage): ?>
             <p>Mostrando <?= $from ?>-<?= $to ?> de <?= (int) $pagination['total'] ?> · <?= $published ?> marcados en portal · <?= $pending ?> pendientes · <?= $failed ?> con error</p>
           <?php else: ?>
-            <p>Resumen operativo de Proppit y Finca Raiz.</p>
+            <p>Resumen operativo de Proppit, Finca Raiz y Mercado Libre.</p>
           <?php endif; ?>
         </div>
       </div>
@@ -172,6 +177,10 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
         </article>
       </section>
 
+      <?php if ($portalFilter === 'mercadolibre' || in_array($activePage, ['cola-cron','automatizacion'], true)): ?>
+        <?php require __DIR__ . '/mercadolibre.php'; ?>
+      <?php endif; ?>
+
       <?php if ($isListPage): ?>
       <form class="admin-filter-panel" method="get" action="<?= htmlspecialchars(\App\Core\Url::to($listRoute)) ?>">
         <div class="quick-filter-row">
@@ -201,6 +210,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
               <?php endif; ?>
               <option value="proppit"<?= $portalFilter === 'proppit' ? ' selected' : '' ?>>Proppit</option>
               <option value="fincaraiz"<?= $portalFilter === 'fincaraiz' ? ' selected' : '' ?>>Finca Raiz</option>
+              <option value="mercadolibre"<?= $portalFilter === 'mercadolibre' ? ' selected' : '' ?>>Mercado Libre</option>
             </select>
           </label>
           <label>
@@ -220,6 +230,20 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
               <?php endforeach; ?>
             </select>
           </label>
+          <?php if ($portalFilter === 'mercadolibre'): ?>
+          <label><span>Estado Mercado Libre</span><select name="mercadolibre_estado">
+            <option value="">Todos</option>
+            <?php foreach (['not_sent' => 'Sin publicar','active' => 'Publicado','paused' => 'Pausado','closed' => 'Finalizado','deleted' => 'Eliminado'] as $value => $label): ?>
+              <option value="<?= $value ?>"<?= $selected('mercadolibre_estado', $value) ?>><?= $label ?></option>
+            <?php endforeach; ?>
+          </select></label>
+          <label><span>Cola Mercado Libre</span><select name="mercadolibre_cola">
+            <option value="">Todos</option>
+            <?php foreach (['pending' => 'En espera','processing' => 'Procesando','synced' => 'Confirmado','failed' => 'Con error'] as $value => $label): ?>
+              <option value="<?= $value ?>"<?= $selected('mercadolibre_cola', $value) ?>><?= $label ?></option>
+            <?php endforeach; ?>
+          </select></label>
+          <?php endif; ?>
           <label>
             <span>Tipo</span>
             <select name="tipo_inmueble">
@@ -274,7 +298,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
           <strong>Acciones masivas: <?= htmlspecialchars($actionPortalLabel) ?></strong>
           <span>Procesa los pendientes del portal que estas viendo.</span>
         </div>
-        <form method="post" action="<?= htmlspecialchars(\App\Core\Url::to($actionPortal === 'fincaraiz' ? '/panel/fincaraiz/procesar-cola' : '/panel/proppit/procesar-cola')) ?>" data-ajax-queue data-action-label="<?= htmlspecialchars($actionPortal === 'fincaraiz' ? 'procesar finca raiz' : 'procesar cola') ?>">
+        <form method="post" action="<?= htmlspecialchars(\App\Core\Url::to('/panel/' . $actionPortal . '/procesar-cola')) ?>" data-ajax-queue data-action-label="<?= htmlspecialchars('procesar ' . strtolower($actionPortalLabel)) ?>">
           <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf) ?>">
           <input type="hidden" name="_redirect" value="<?= htmlspecialchars($currentUrl) ?>">
           <input type="hidden" name="limit" value="20">
@@ -360,6 +384,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
               <option value="">Todos</option>
               <option value="proppit">Proppit</option>
               <option value="fincaraiz">Finca Raiz</option>
+              <option value="mercadolibre">Mercado Libre</option>
             </select>
           </label>
           <label>
@@ -390,7 +415,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
             <?php foreach ($queueItems as $item): ?>
               <?php
                 $image = $item['portada_url'] ?: 'https://gocartagenarealestate.com/wp-content/uploads/2025/01/cropped-favicon_1.png';
-                $portalClass = (string) ($item['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit';
+                $portalClass = (string) ($item['portal'] ?? '') === 'mercadolibre' ? 'is-mercadolibre' : ((string) ($item['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit');
               ?>
               <article class="queue-item" data-filter-item data-filter-portal="<?= htmlspecialchars((string) ($item['portal'] ?? '')) ?>" data-filter-action="<?= htmlspecialchars((string) ($item['desired_action'] ?? '')) ?>" data-filter-status="<?= htmlspecialchars((string) ($item['sync_status'] ?? '')) ?>" data-filter-text="<?= htmlspecialchars(strtolower((string) ($item['reference_id'] ?? '') . ' ' . (string) ($item['titulo'] ?? '') . ' ' . (string) ($item['barrio'] ?? '') . ' ' . (string) ($item['direccion'] ?? ''))) ?>">
                 <img src="<?= htmlspecialchars((string) $image) ?>" alt="<?= htmlspecialchars((string) ($item['titulo'] ?? 'Inmueble')) ?>" loading="lazy" decoding="async">
@@ -471,6 +496,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                 <option value="">Todos</option>
                 <option value="proppit">Proppit</option>
                 <option value="fincaraiz">Finca Raiz</option>
+              <option value="mercadolibre">Mercado Libre</option>
               </select>
             </label>
             <label>
@@ -490,7 +516,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
           <?php if ($queueItems): ?>
             <div class="queue-list compact-queue">
               <?php foreach ($queueItems as $item): ?>
-                <?php $portalClass = (string) ($item['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit'; ?>
+                <?php $portalClass = (string) ($item['portal'] ?? '') === 'mercadolibre' ? 'is-mercadolibre' : ((string) ($item['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit'); ?>
                 <article class="queue-item compact-row" data-filter-item data-filter-portal="<?= htmlspecialchars((string) ($item['portal'] ?? '')) ?>" data-filter-action="<?= htmlspecialchars((string) ($item['desired_action'] ?? '')) ?>" data-filter-status="<?= htmlspecialchars((string) ($item['sync_status'] ?? '')) ?>" data-filter-text="<?= htmlspecialchars(strtolower((string) ($item['reference_id'] ?? '') . ' ' . (string) ($item['titulo'] ?? '') . ' ' . (string) ($item['barrio'] ?? ''))) ?>">
                   <div>
                     <strong><?= htmlspecialchars((string) ($item['titulo'] ?? 'Inmueble sin titulo')) ?></strong>
@@ -540,6 +566,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
               <option value="">Todos</option>
               <option value="proppit">Proppit</option>
               <option value="fincaraiz">Finca Raiz</option>
+              <option value="mercadolibre">Mercado Libre</option>
             </select>
           </label>
           <label>
@@ -567,7 +594,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                   <?php foreach ($stateSummary[$key] as $item): ?>
                     <?php
                       $image = $item['portada_url'] ?: 'https://gocartagenarealestate.com/wp-content/uploads/2025/01/cropped-favicon_1.png';
-                      $portalClass = (string) ($item['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit';
+                      $portalClass = (string) ($item['portal'] ?? '') === 'mercadolibre' ? 'is-mercadolibre' : ((string) ($item['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit');
                     ?>
                     <div class="state-row" data-filter-item data-filter-group="<?= htmlspecialchars($key) ?>" data-filter-portal="<?= htmlspecialchars((string) ($item['portal'] ?? '')) ?>" data-filter-remote="<?= htmlspecialchars((string) ($item['remote_status'] ?? '')) ?>" data-filter-status="<?= htmlspecialchars((string) ($item['sync_status'] ?? '')) ?>" data-filter-text="<?= htmlspecialchars(strtolower((string) ($item['reference_id'] ?? '') . ' ' . (string) ($item['titulo'] ?? '') . ' ' . (string) ($item['barrio'] ?? '') . ' ' . (string) ($item['last_error'] ?? ''))) ?>">
                       <img src="<?= htmlspecialchars((string) $image) ?>" alt="<?= htmlspecialchars((string) ($item['titulo'] ?? 'Inmueble')) ?>" loading="lazy" decoding="async">
@@ -626,7 +653,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
               $portalActionLabels = [
                 'publish' => 'Publicar',
                 'update' => 'Actualizar',
-                'delete' => 'Despublicar',
+                'delete' => 'Eliminar / despublicar',
                 'pause' => 'Despublicar',
                 'activate' => 'Activar',
                 'verify' => 'Verificar',
@@ -667,6 +694,15 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
               $rowPublishLabel = $rowActionPortal === 'fincaraiz' ? 'publicar finca raiz' : 'publicar';
               $rowUpdateLabel = $rowActionPortal === 'fincaraiz' ? 'actualizar finca raiz' : 'actualizar';
               $rowUnpublishLabel = $rowActionPortal === 'fincaraiz' ? 'despublicar finca raiz' : 'despublicar';
+              if ($rowActionPortal === 'mercadolibre') {
+                $rowPortalLabel = 'Mercado Libre';
+                $rowPublishPath = '/panel/inmuebles/' . $row['id'] . '/mercadolibre/publicar';
+                $rowUpdatePath = '/panel/inmuebles/' . $row['id'] . '/mercadolibre/actualizar';
+                $rowUnpublishPath = '/panel/inmuebles/' . $row['id'] . '/mercadolibre/despublicar';
+                $rowPublishLabel = 'publicar mercado libre';
+                $rowUpdateLabel = 'actualizar mercado libre';
+                $rowUnpublishLabel = 'despublicar mercado libre';
+              }
               $rowPublishButtonText = $rowActionPortal === 'fincaraiz' && (string) ($row['fincaraiz_remote_status'] ?? '') === 'disabled'
                 ? 'ACTIVAR EN ' . strtoupper($rowPortalLabel)
                 : 'PUBLICAR EN ' . strtoupper($rowPortalLabel);
@@ -705,9 +741,11 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                 'media' => array_slice(array_values(array_map(fn ($item) => (string) $item['url'], $row['multimedia'] ?? [])), 0, 6),
                 'fullUrl' => \App\Core\Url::to('/panel/inmuebles/' . $row['id']),
                 'canManage' => !$isUnavailable,
-                'publishUrl' => \App\Core\Url::to('/panel/inmuebles/' . $row['id'] . '/publicar'),
-                'updateUrl' => \App\Core\Url::to('/panel/inmuebles/' . $row['id'] . '/actualizar'),
-                'unpublishUrl' => \App\Core\Url::to('/panel/inmuebles/' . $row['id'] . '/despublicar'),
+                'actionPortal' => $rowActionPortal,
+                'actionPortalLabel' => $rowPortalLabel,
+                'publishUrl' => \App\Core\Url::to($rowPublishPath),
+                'updateUrl' => \App\Core\Url::to($rowUpdatePath),
+                'unpublishUrl' => \App\Core\Url::to($rowUnpublishPath),
                 'boostedUrl' => \App\Core\Url::to('/panel/inmuebles/' . $row['id'] . '/destacado'),
                 'exclusiveUrl' => \App\Core\Url::to('/panel/inmuebles/' . $row['id'] . '/exclusivo'),
                 'fincaraizPublishUrl' => \App\Core\Url::to('/panel/inmuebles/' . $row['id'] . '/fincaraiz/publicar'),
@@ -734,7 +772,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                   <span class="table-mini"><?= (int) ($row['habitaciones'] ?? 0) ?> Hab · <?= (int) ($row['banos'] ?? 0) ?> Ba · <?= number_format((float) ($row['area_construida'] ?: $row['area_privada'] ?: 0), 0, ',', '.') ?> m²</span>
                 </td>
                 <td>
-                  <span class="table-pill" data-card-sync><?= htmlspecialchars($proppitSync) ?></span>
+                  <span class="table-pill" <?= $rowActionPortal === 'mercadolibre' ? 'data-card-ml-sync' : 'data-card-sync' ?>><?= htmlspecialchars($rowActionPortal === 'mercadolibre' ? ($row['mercadolibre_sync_status'] ?? 'Sin cola') : ($rowActionPortal === 'fincaraiz' ? $fincaraizSync : $proppitSync)) ?></span>
                   <span class="table-mini"><?= $isUnavailable ? 'No disponible' : 'Disponible' ?></span>
                 </td>
                 <td class="portal-chip-cell">
@@ -748,6 +786,14 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                         <span class="table-pill table-pill-dark" data-card-remote><?= htmlspecialchars($proppitRemote) ?></span>
                         <span class="table-pill" data-card-proppit-sync><?= htmlspecialchars($proppitSync) ?></span>
                       </div>
+                    </div>
+                    <div class="portal-status-row is-mercadolibre">
+                      <div><strong>Mercado Libre</strong><span data-card-ml-action><?= htmlspecialchars($portalActionText($row['mercadolibre_desired_action'] ?? '', $row['mercadolibre_sync_status'] ?? '')) ?></span></div>
+                      <div class="portal-status-tags">
+                        <span class="table-pill" data-card-ml-remote><?= htmlspecialchars($row['mercadolibre_remote_status'] ?? 'Sin publicar') ?></span>
+                        <span class="table-pill" data-card-ml-sync><?= htmlspecialchars($row['mercadolibre_sync_status'] ?? 'Sin cola') ?></span>
+                      </div>
+                      <p class="property-error" data-card-ml-error <?= empty($row['mercadolibre_last_error']) ? 'hidden' : '' ?>><?= htmlspecialchars($row['mercadolibre_last_error'] ?? '') ?></p>
                     </div>
                     <div class="portal-status-row is-fincaraiz">
                       <div>
@@ -764,8 +810,12 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                   <div class="property-error table-error" data-card-fr-error <?= $row['fincaraiz_last_error'] ? '' : 'hidden' ?>><?= htmlspecialchars((string) ($row['fincaraiz_last_error'] ?? '')) ?></div>
                 </td>
                 <td>
+                  <?php if ($rowActionPortal === 'mercadolibre'): ?>
+                  <span data-card-ml-type><?= htmlspecialchars(['silver' => 'Plata','gold' => 'Oro','gold_premium' => 'Oro Premium'][$row['mercadolibre_listing_type'] ?? ''] ?? ($row['mercadolibre_listing_type'] ?: 'Sin asignar')) ?></span>
+                  <?php else: ?>
                   <span data-card-boosted><?= $isBoosted ? 'Destacado: activo' : 'Destacado: inactivo' ?></span><br>
                   <span data-card-exclusive><?= $isExclusive ? 'Exclusivo: activo' : 'Exclusivo: inactivo' ?></span>
+                  <?php endif; ?>
                 </td>
                 <td>
                   <div class="property-actions table-actions">
@@ -793,6 +843,13 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                         <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf) ?>">
                         <input type="hidden" name="_redirect" value="<?= htmlspecialchars($currentUrl) ?>">
                         <button type="submit" class="update-action">VERIFICAR FINCA</button>
+                      </form>
+                    <?php endif; ?>
+                    <?php if ($rowActionPortal === 'mercadolibre'): ?>
+                      <form method="post" action="<?= htmlspecialchars(\App\Core\Url::to('/panel/inmuebles/' . $row['id'] . '/mercadolibre/eliminar')) ?>" data-ajax-action data-action-label="eliminar mercado libre" data-confirm="delete">
+                        <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf) ?>">
+                        <input type="hidden" name="confirm_delete" value="1">
+                        <button type="submit" class="secondary-action">ELIMINAR DEFINITIVAMENTE</button>
                       </form>
                     <?php endif; ?>
                     <?php if ($rowActionPortal === 'proppit'): ?>
@@ -839,6 +896,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                 <option value="">Todos</option>
                 <option value="proppit">Proppit</option>
                 <option value="fincaraiz">Finca Raiz</option>
+              <option value="mercadolibre">Mercado Libre</option>
               </select>
             </label>
             <label>
@@ -868,7 +926,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
             <?php foreach ($combinedLogs as $log): ?>
               <?php
                 $ok = (int) ($log['success'] ?? 0) === 1;
-                $portalClass = (string) ($log['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit';
+                $portalClass = (string) ($log['portal'] ?? '') === 'mercadolibre' ? 'is-mercadolibre' : ((string) ($log['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit');
               ?>
               <article data-filter-item data-filter-portal="<?= htmlspecialchars((string) ($log['portal'] ?? '')) ?>" data-filter-result="<?= $ok ? 'ok' : 'error' ?>" data-filter-http="<?= htmlspecialchars((string) ($log['http_status'] ?? '')) ?>" data-filter-text="<?= htmlspecialchars(strtolower((string) ($log['reference_id'] ?? '') . ' ' . (string) ($log['titulo'] ?? '') . ' ' . (string) ($log['action'] ?? '') . ' ' . (string) ($log['error_message'] ?? ''))) ?>">
                 <div class="log-main">
@@ -1011,6 +1069,6 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
     </section>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="<?= htmlspecialchars(\App\Core\Url::to('/panel.js')) ?>?v=20260915-2"></script>
+  <script src="<?= htmlspecialchars(\App\Core\Url::to('/panel.js')) ?>?v=20260922-ml1"></script>
 </body>
 </html>

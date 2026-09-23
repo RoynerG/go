@@ -52,5 +52,12 @@ $router->post('/api/inmuebles/{reference_id}/despublicar', [ApiInmuebleControlle
 $router->post('/cron/proppit-sync', [CronController::class, 'sync']);
 $router->post('/cron/fincaraiz-sync', [CronController::class, 'syncFincaraiz']);
 $router->post('/cron/portales-sync', [CronController::class, 'syncAll']);
+$router->post('/cron/mercadolibre-sync', [CronController::class, 'syncMercadolibre']);
+$router->post('/panel/mercadolibre/conectar', [\App\Controllers\MercadolibreController::class, 'connect']);
+$router->get('/panel/mercadolibre/callback', [\App\Controllers\MercadolibreController::class, 'callback']);
+$router->get('/panel/mercadolibre/estado', [\App\Controllers\MercadolibreController::class, 'status']);
+$router->post('/panel/mercadolibre/paquetes', [\App\Controllers\MercadolibreController::class, 'packs']);
+$router->post('/panel/mercadolibre/procesar-cola', [\App\Controllers\MercadolibreController::class, 'process']);
+$router->post('/panel/inmuebles/{id}/mercadolibre/{action}', [\App\Controllers\MercadolibreController::class, 'action']);
 
 $router->dispatch($_SERVER['REQUEST_METHOD'], parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/');

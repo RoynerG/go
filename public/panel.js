@@ -100,6 +100,15 @@
     if (frUpdateForm) frUpdateForm.action = detail.fincaraizUpdateUrl || '#';
     var frUnpublishForm = modal.querySelector('[data-modal-fr-unpublish-form]');
     if (frUnpublishForm) frUnpublishForm.action = detail.fincaraizUnpublishUrl || '#';
+    [frPublishForm, frUpdateForm, frUnpublishForm].forEach(function (form) { if (form) form.hidden = !!detail.actionPortal; });
+    [boostedForm, exclusiveForm].forEach(function (form) { if (form) form.hidden = detail.actionPortal && detail.actionPortal !== 'proppit'; });
+    [publishForm, updateForm, unpublishForm].forEach(function (form, index) {
+      if (!form) return;
+      var label = ['Publicar', 'Actualizar', 'Despublicar'][index];
+      var button = form.querySelector('button');
+      if (button) button.textContent = label + ' ' + (detail.actionPortalLabel || 'Proppit');
+      form.dataset.actionLabel = label.toLowerCase() + (detail.actionPortal === 'mercadolibre' ? ' mercado libre' : '');
+    });
     modal.hidden = false;
     modal.classList.add('is-open');
     modal.setAttribute('aria-hidden', 'false');
@@ -164,14 +173,15 @@
 
   function confirmAction(form) {
     if (!form.hasAttribute('data-confirm')) return Promise.resolve(true);
-    if (!swalAvailable()) return Promise.resolve(window.confirm('¿Seguro que deseas continuar?'));
+    var permanent = form.getAttribute('data-confirm') === 'delete';
+    if (!swalAvailable()) return Promise.resolve(window.confirm(permanent ? 'Eliminar definitivamente de Mercado Libre. No podras reactivar este anuncio. ¿Continuar?' : '¿Seguro que deseas continuar?'));
 
     return window.Swal.fire({
-      title: '¿Despublicar inmueble?',
-      text: 'La accion se enviara al portal y la tarjeta se actualizara sin recargar.',
+      title: permanent ? '¿Eliminar definitivamente?' : '¿Despublicar inmueble?',
+      text: permanent ? 'El anuncio se cerrara y eliminara de Mercado Libre. No podras reactivarlo.' : 'La accion se enviara al portal y la tarjeta se actualizara sin recargar.',
       icon: 'warning',
       showCancelButton: true,
-      confirmButtonText: 'Si, despublicar',
+      confirmButtonText: permanent ? 'Eliminar definitivamente' : 'Si, despublicar',
       cancelButtonText: 'Cancelar',
       confirmButtonColor: '#ffcc00',
       cancelButtonColor: '#1f2937',
@@ -241,6 +251,10 @@
 
   function updateCard(card) {
     if (!card || !card.id) return;
+    if (card.mercadolibre) {
+      updateMercadolibreCard(card.id, card.mercadolibre);
+      return;
+    }
     updateDetailPage(card);
     var article = document.querySelector('[data-property-id="' + String(card.id) + '"]');
     if (!article) return;
@@ -390,6 +404,7 @@
       })
       .then(function (payload) {
         updateQueueBoard(payload.operation);
+        refreshMercadolibre();
         if (payload.cards && payload.cards.length) {
           payload.cards.forEach(updateCard);
         }
@@ -660,7 +675,74 @@
     initThemeToggle();
     initLiveFilters();
     updateSelectedCount();
+    refreshMercadolibre();
   }
+
+  function updateMercadolibreCard(id, ad) {
+    var row = document.querySelector('[data-property-id="' + String(id) + '"]');
+    if (!row) return;
+    updateText(row, '[data-card-ml-remote]', ad.remote_status || 'Sin publicar');
+    row.querySelectorAll('[data-card-ml-sync]').forEach(function (node) { node.textContent = ad.sync_status || 'Sin cola'; });
+    updateText(row, '[data-card-ml-type]', ({silver:'Plata',gold:'Oro',gold_premium:'Oro Premium'})[ad.listing_type_id] || ad.listing_type_id || 'Sin asignar');
+    updateText(row, '[data-card-ml-action]', portalActionText(ad.desired_action, ad.sync_status));
+    var error = row.querySelector('[data-card-ml-error]');
+    if (error) { error.textContent = ad.last_error || ''; error.hidden = !ad.last_error; }
+  }
+
+  var mlPollBusy = false;
+  function refreshMercadolibre() {
+    var board = document.querySelector('[data-ml-board]');
+    if (!board || mlPollBusy || document.hidden) return;
+    mlPollBusy = true;
+    var ids = Array.from(document.querySelectorAll('[data-property-id]')).map(function (row) { return row.dataset.propertyId; }).filter(Boolean).slice(0, 20);
+    fetch(board.dataset.statusUrl + '?ids=' + encodeURIComponent(ids.join(',')), { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (response) { if (!response.ok) throw new Error('status'); return response.json(); })
+      .then(function (data) {
+        if (!data.ok || !board.isConnected) return;
+        Object.keys(data.queue || {}).forEach(function (key) {
+          document.querySelectorAll('[data-ml-metric="' + key + '"]').forEach(function (node) { node.textContent = data.queue[key] || '0'; });
+        });
+        updateText(board, '[data-ml-last-sync]', data.queue.last_synced_at || 'Sin ejecuciones confirmadas');
+        (data.cards || []).forEach(function (ad) { updateMercadolibreCard(ad.inmueble_id, ad); });
+        var body = board.querySelector('[data-ml-activity]');
+        if (body) {
+          body.replaceChildren();
+          (data.items || []).forEach(function (ad) {
+            var row = document.createElement('tr');
+            [ad.reference_id + ' · ' + (ad.titulo || 'Inmueble retirado'), portalActionText(ad.desired_action, ad.sync_status), ad.sync_status, ad.remote_status, ad.last_error || ''].forEach(function (value) {
+              var cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell);
+            });
+            body.appendChild(row);
+          });
+        }
+      })
+      .catch(function () { updateText(board, '[data-ml-last-sync]', 'No se pudo consultar el estado; reintentando'); })
+      .finally(function () { mlPollBusy = false; });
+  }
+  window.setInterval(refreshMercadolibre, 15000);
+
+  document.addEventListener('submit', function (event) {
+    var form = event.target.closest('form[data-ml-packs]');
+    if (!form) return;
+    event.preventDefault();
+    setButtonBusy(form, true);
+    fetch(form.action, { method: 'POST', body: new FormData(form), credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (response) { return response.json(); })
+      .then(function (data) {
+        if (!data.ok) throw new Error(data.message || 'No se pudieron consultar los cupos.');
+        var node = document.querySelector('[data-ml-packs-result]');
+        if (!node) return;
+        node.replaceChildren();
+        (data.packs || []).forEach(function (pack) {
+          var p = document.createElement('p');
+          p.textContent = (pack.description || 'Paquete') + ' · Vence: ' + (pack.date_expires || 'Sin fecha') + ' · ' + (pack.listing_details || []).map(function (d) { return d.listing_type_id + ': ' + d.remaining_listings + ' disponibles'; }).join(' · ');
+          node.appendChild(p);
+        });
+        if (!data.packs.length) node.textContent = 'La cuenta no devuelve paquetes activos.';
+      })
+      .catch(function (error) { showResult('error', 'Mercado Libre', error.message); })
+      .finally(function () { setButtonBusy(form, false); });
+  });
 
   document.addEventListener('change', function (event) {
     if (event.target && event.target.matches('[data-row-check]')) updateSelectedCount();

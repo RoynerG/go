@@ -1,6 +1,6 @@
 # Portales Go
 
-Panel MVC para sincronizar inmuebles de WordPress con Proppit y Finca Raiz.
+Panel MVC para sincronizar inmuebles de WordPress con Proppit, Finca Raiz y Mercado Libre.
 
 ## Configuracion
 
@@ -26,6 +26,9 @@ php -S 127.0.0.1:8099 -t public
 En el servidor local de PHP la app ignora `APP_BASE_PATH` automaticamente, asi los estilos cargan desde `/assets.css` y el panel desde `/panel/login`.
 
 ## Cron
+
+Para configurar OAuth, permisos, el paquete mixto y la cola de Mercado Libre,
+consulta [la guia de Mercado Libre](docs/mercadolibre.md).
 
 Procesar todos los portales:
 

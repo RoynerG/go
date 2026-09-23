@@ -23,12 +23,21 @@ try {
 
     $proppitSync = (new ProppitSyncService())->run($limit);
     $fincaraizSync = (new FincaraizSyncService())->run($limit);
+    $mercadolibreSync = ['status' => 'disabled'];
+    if (Env::bool('MERCADOLIBRE_ENABLED')) {
+        try {
+            $mercadolibreSync = (new \App\Services\MercadolibreSyncService())->run($limit);
+        } catch (Throwable $e) {
+            $mercadolibreSync = ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
 
     echo json_encode([
         'ok' => true,
         'started_at' => $startedAt,
         'finished_at' => date('Y-m-d H:i:s'),
         'limit' => $limit,
+        'mercadolibre' => $mercadolibreSync,
         'proppit' => [
             'audit' => $proppitAudit,
             'sync' => $proppitSync,
