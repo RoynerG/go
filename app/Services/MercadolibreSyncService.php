@@ -28,8 +28,10 @@ final class MercadolibreSyncService
 
     public function run(int $limit = 10, ?int $onlyId = null, bool $dryRun = false): array
     {
-        if (!$dryRun && (!Env::bool('MERCADOLIBRE_ENABLED') || !MercadolibreClient::configured() || !$this->repository->account())) {
-            return ['ok' => false, 'status' => 'not_connected', 'message' => 'Mercado Libre pendiente de configuracion y autorizacion.'];
+        if (!$dryRun) {
+            if (!Env::bool('MERCADOLIBRE_ENABLED')) return ['ok'=>false, 'status'=>'disabled', 'message'=>'Sincronizacion desactivada: configura MERCADOLIBRE_ENABLED=true.'];
+            if (!MercadolibreClient::configured()) return ['ok'=>false, 'status'=>'configuration_required', 'message'=>'Completa la configuracion de Mercado Libre en Conexiones.'];
+            if (!$this->repository->account()) return ['ok'=>false, 'status'=>'not_connected', 'message'=>'Conecta la cuenta de Mercado Libre.'];
         }
         if (!$this->repository->lock('worker')) {
             return ['ok' => true, 'status' => 'busy', 'message' => 'Ya hay un proceso de Mercado Libre en curso.'];
@@ -44,7 +46,15 @@ final class MercadolibreSyncService
                 return ['ok' => true, 'dry_run' => true, 'audit' => $audit];
             }
             $stats = ['ok' => true, 'audit' => $audit, 'processed' => 0, 'success' => 0, 'failed' => 0, 'waiting_quota' => 0];
+            $contactIssues = MercadolibrePayloadBuilder::contactIssues();
+            if ($contactIssues) {
+                $stats['ok'] = false;
+                $stats['status'] = 'configuration_required';
+                $stats['message'] = 'Publicacion bloqueada: revisa ' . implode(', ', array_keys($contactIssues)) . ' en Conexiones. Las despublicaciones siguen habilitadas.';
+            }
             foreach ($this->repository->pending($limit, $onlyId) as $ad) {
+                // A shared setup error must not consume every property's retry budget.
+                if ($contactIssues && in_array($ad['desired_action'], ['publish','update'], true)) continue;
                 if (!$this->repository->processing($ad)) {
                     continue;
                 }
@@ -79,6 +89,7 @@ final class MercadolibreSyncService
         $stats = ['publish' => 0, 'update' => 0, 'pause' => 0, 'delete' => 0, 'unchanged' => 0];
         foreach ($this->repository->properties($onlyId) as $id => $property) {
             $ad = $ads[$id] ?? null;
+            $property['mercadolibre_property_age'] = $ad['property_age'] ?? null;
             if (!$ad && !MercadolibrePayloadBuilder::available($property)) {
                 continue;
             }
@@ -118,6 +129,7 @@ final class MercadolibreSyncService
 
     private function syncOne(array $ad, ?array $property): string
     {
+        if ($property !== null) $property['mercadolibre_property_age'] = $ad['property_age'] ?? null;
         $action = $ad['desired_action'];
         $item = null;
         if (!empty($ad['external_id'])) {

@@ -37,6 +37,14 @@ final class MercadolibreRepository
         if (!$this->pdo->query("SHOW COLUMNS FROM mercadolibre_ads LIKE 'listing_type_id'")->fetch()) {
             $this->pdo->exec('ALTER TABLE mercadolibre_ads ADD COLUMN listing_type_id VARCHAR(40) NULL');
         }
+        if (!$this->pdo->query("SHOW COLUMNS FROM mercadolibre_ads LIKE 'property_age'")->fetch()) {
+            try {
+                $this->pdo->exec('ALTER TABLE mercadolibre_ads ADD COLUMN property_age SMALLINT UNSIGNED NULL');
+            } catch (\PDOException $e) {
+                // The cron and panel can run the first migration concurrently.
+                if ((int) ($e->errorInfo[1] ?? 0) !== 1060) throw $e;
+            }
+        }
         $this->pdo->exec("CREATE TABLE IF NOT EXISTS mercadolibre_logs (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             inmueble_id BIGINT UNSIGNED NOT NULL, reference_id VARCHAR(191) NOT NULL,
@@ -51,6 +59,15 @@ final class MercadolibreRepository
         $q = $this->pdo->prepare('SELECT * FROM mercadolibre_ads WHERE inmueble_id = ?');
         $q->execute([$id]);
         return $q->fetch() ?: null;
+    }
+
+    public function savePropertyAge(int $id, ?int $age): void
+    {
+        if ($age !== null && ($age < 0 || $age > 999)) throw new \InvalidArgumentException('Antiguedad no valida.');
+        $query = $this->pdo->prepare("UPDATE mercadolibre_ads SET property_age=?, target_hash='',
+            version=version+1, sync_status='pending', attempts=0, next_attempt_at=NULL, last_error=NULL, updated_at=NOW()
+            WHERE inmueble_id=?");
+        $query->execute([$age, $id]);
     }
 
     public function properties(?int $onlyId = null): array

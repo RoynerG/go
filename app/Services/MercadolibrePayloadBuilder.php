@@ -11,6 +11,19 @@ final class MercadolibrePayloadBuilder
 {
     public function __construct(private MercadolibreClient $client) {}
 
+    public static function contactIssues(): array
+    {
+        $issues = [];
+        $phone = (string) Env::get('MERCADOLIBRE_CONTACT_PHONE', '');
+        $whatsapp = (string) (Env::get('MERCADOLIBRE_CONTACT_WHATSAPP') ?: $phone);
+        if (self::phone($phone) === '') $issues['MERCADOLIBRE_CONTACT_PHONE'] = 'Telefono comercial colombiano de 10 digitos.';
+        if (self::phone($whatsapp) === '') $issues['MERCADOLIBRE_CONTACT_WHATSAPP'] = 'WhatsApp comercial colombiano de 10 digitos.';
+        if (!filter_var(trim((string) Env::get('MERCADOLIBRE_CONTACT_EMAIL', '')), FILTER_VALIDATE_EMAIL)) {
+            $issues['MERCADOLIBRE_CONTACT_EMAIL'] = 'Correo comercial valido.';
+        }
+        return $issues;
+    }
+
     public static function normalize(string $value): string
     {
         $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
@@ -38,7 +51,8 @@ final class MercadolibrePayloadBuilder
         $data['available'] = self::available($property);
         $data['intent'] = $intent;
         $source = json_decode((string) ($property['source_payload'] ?? '{}'), true) ?: [];
-        $data['source_attributes'] = array_intersect_key($source, array_flip(['ambientes','rooms','mercadolibre_attributes']));
+        $data['source_attributes'] = array_intersect_key($source, array_flip(['ambientes','rooms','edad_inmueble','antiguedad','mercadolibre_attributes']));
+        $data['property_age'] = self::propertyAge($property);
         foreach (['CONTACT_NAME','CONTACT_EMAIL','CONTACT_PHONE','CONTACT_WHATSAPP','DUAL_OFFER','CATEGORY_MAP','LOCATION_MAP'] as $key) {
             $data['config_' . $key] = Env::get('MERCADOLIBRE_' . $key, '');
         }
@@ -171,7 +185,8 @@ final class MercadolibrePayloadBuilder
     private function attributes(array $property, string $categoryId): array
     {
         $source = json_decode((string) ($property['source_payload'] ?? '{}'), true) ?: [];
-        $values = ['BEDROOMS' => $property['habitaciones'] ?? null, 'FULL_BATHROOMS' => $property['banos'] ?? null,
+        $values = ['PROPERTY_AGE' => self::propertyAge($property),
+            'BEDROOMS' => $property['habitaciones'] ?? null, 'FULL_BATHROOMS' => $property['banos'] ?? null,
             'ROOMS' => $source['ambientes'] ?? $source['rooms'] ?? null,
             'PARKING_LOTS' => $property['parqueaderos'] ?? null, 'SOCIAL_STRATUM' => $property['estrato'] ?? null,
             'COVERED_AREA' => ($property['area_construida'] ?? 0) ?: ($property['area_privada'] ?? null),
@@ -185,7 +200,11 @@ final class MercadolibrePayloadBuilder
                 throw new RuntimeException('El atributo ' . $id . ' debe ser un valor simple.');
             }
             if ($value !== null && $value !== '') {
-                $attributes[] = ['id' => $id, 'value_name' => (string) $value . (str_ends_with($id, '_AREA') ? ' m²' : '')];
+                $unit = str_ends_with($id, '_AREA') ? ' m²' : '';
+                if ($id === 'PROPERTY_AGE' && ($definition['value_type'] ?? '') === 'number_unit' && is_numeric($value)) {
+                    $unit = ' ' . ($definition['default_unit'] ?? 'años');
+                }
+                $attributes[] = ['id' => $id, 'value_name' => (string) $value . $unit];
                 continue;
             }
             $featureName = (string) preg_replace('/^(con|tiene) /', '', self::normalize((string) ($definition['name'] ?? '')));
@@ -198,6 +217,7 @@ final class MercadolibrePayloadBuilder
                 }
             }
             if (!empty($definition['tags']['required']) && empty($definition['tags']['read_only']) && empty($definition['tags']['fixed'])) {
+                if ($id === 'PROPERTY_AGE') throw new RuntimeException('Falta antiguedad: completa ano_construccion o edad_inmueble para publicar en Mercado Libre.');
                 throw new RuntimeException('Falta homologar el atributo obligatorio ' . ($definition['name'] ?? $id) . ' (' . $id . ').');
             }
         }
@@ -216,12 +236,26 @@ final class MercadolibrePayloadBuilder
         throw new RuntimeException('No se encontro una coincidencia exacta para ' . $label . ' en Mercado Libre.');
     }
 
-    private function phone(string $value): string
+    private static function phone(string $value): string
     {
         $value = (string) preg_replace('/\D+/', '', $value);
         if (strlen($value) === 12 && str_starts_with($value, '57')) {
             $value = substr($value, 2);
         }
         return strlen($value) === 10 ? $value : '';
+    }
+
+    public static function propertyAge(array $property): ?int
+    {
+        $source = json_decode((string) ($property['source_payload'] ?? '{}'), true) ?: [];
+        $age = $source['edad_inmueble'] ?? $source['antiguedad'] ?? null;
+        if (is_scalar($age) && preg_match('/^\d{1,3}$/D', trim((string) $age))) return (int) $age;
+        $year = filter_var($property['ano_construccion'] ?? null, FILTER_VALIDATE_INT);
+        $current = (int) date('Y');
+        if ($year !== false && $year >= 1800 && $year <= $current) return $current - $year;
+        $override = $property['mercadolibre_property_age'] ?? null;
+        if (is_scalar($override) && preg_match('/^\d{1,3}$/D', (string) $override)) return (int) $override;
+        $fallback = trim((string) Env::get('MERCADOLIBRE_DEFAULT_PROPERTY_AGE', '8'));
+        return preg_match('/^\d{1,3}$/D', $fallback) ? (int) $fallback : null;
     }
 }

@@ -144,3 +144,30 @@ Documentacion consultada:
 - https://developers.mercadolibre.com.co/es_ar/categorias-inmuebles
 - https://developers.mercadolibre.com.co/es_ar/localizar-inmuebles
 - https://developers.mercadolibre.com.co/es_ar/gestionar-paquetes-de-inmuebles
+# Operaciones y antiguedad
+
+El menu tiene tres destinos: Propiedades, Operaciones y Conexiones. En
+`/panel/operaciones`, Cola actual, Errores pendientes e Historial comparten
+filtros de portal, inmueble, accion y estado. Los filtros y la paginacion de
+20 filas se aplican en SQL sobre todos los registros, no sobre una muestra
+reciente. La vista se actualiza cada 15 segundos sin perder los filtros.
+Las rutas anteriores de cola, estados y logs siguen abriendo el destino
+correspondiente de Operaciones.
+
+Conectar OAuth no activa la sincronizacion: se requiere
+`MERCADOLIBRE_ENABLED=true`. Los datos de contacto faltantes se muestran
+en Conexiones y bloquean publicar/actualizar sin consumir los intentos
+de cada inmueble. Las despublicaciones no dependen del contacto comercial.
+
+`PROPERTY_AGE` se obtiene de `edad_inmueble`/`antiguedad` del payload de
+origen o del ano de construccion. Cuando faltan, se usa la antiguedad
+individual guardada desde **Gestionar Mercado Libre**, o el valor
+`MERCADOLIBRE_DEFAULT_PROPERTY_AGE` (8 anos por decision del negocio).
+Configurar esta variable vacia deshabilita el provisional global.
+El dato real del origen siempre tiene prioridad. Guardar una edad individual
+solo actualiza la cola: no publica inmediatamente ni borra una pausa manual.
+
+La conversion respeta el tipo y la unidad que devuelve el catalogo de
+[categorias y atributos de Mercado Libre](https://developers.mercadolibre.com.co/en_us/introduction-products/categories-and-attributes).
+No se inventan equivalencias geograficas: los barrios sin coincidencia
+exacta requieren `MERCADOLIBRE_LOCATION_MAP` con un ID valido de la ciudad.

@@ -75,6 +75,20 @@ final class MercadolibreController
     {
         if (!$this->authorize()) return;
         try {
+            if ($action === 'antiguedad') {
+                $value = $_POST['property_age'] ?? '';
+                if (!is_string($value) || ($value !== '' && !preg_match('/^\d{1,3}$/D', $value))) {
+                    throw new RuntimeException('Indica una antiguedad de 0 a 999 anos, o deja el campo vacio.');
+                }
+                $property = (new InmuebleRepository())->findFull((int) $id);
+                if (!$property) throw new RuntimeException('Inmueble no encontrado.');
+                $repo = new MercadolibreRepository();
+                $repo->ensure((int) $id, (string) $property['reference_id']);
+                $repo->savePropertyAge((int) $id, $value === '' ? null : (int) $value);
+                Response::json(['ok'=>true, 'type'=>'success', 'message'=>'Antiguedad guardada. Se aplicara en el siguiente ciclo si falta el dato de origen.',
+                    'card'=>['id'=>(int) $id,'mercadolibre'=>$repo->ad((int) $id)]]);
+                return;
+            }
             $actions = ['publicar' => 'publish', 'actualizar' => 'update', 'despublicar' => 'pause', 'eliminar' => 'delete'];
             if (!isset($actions[$action])) throw new RuntimeException('Accion no valida.');
             $property = (new InmuebleRepository())->findFull((int) $id);
@@ -96,8 +110,8 @@ final class MercadolibreController
             session_write_close();
             $result = (new MercadolibreSyncService())->run(1, (int) $id);
             $ad = $repo->ad((int) $id);
-            $ok = ($result['status'] ?? '') === 'busy' || ($ad['sync_status'] ?? '') !== 'failed';
-            $message = $ad['last_error'] ?: (($ad['sync_status'] ?? '') === 'synced' ? 'Operacion confirmada en Mercado Libre.' : 'Operacion en cola de Mercado Libre.');
+            $ok = !empty($result['ok']) && ($ad['sync_status'] ?? '') !== 'failed';
+            $message = $result['message'] ?? ($ad['last_error'] ?: (($ad['sync_status'] ?? '') === 'synced' ? 'Operacion confirmada en Mercado Libre.' : 'Operacion en cola de Mercado Libre.'));
             Response::json(['ok' => $ok, 'type' => $ok ? 'success' : 'error', 'message' => $message,
                 'card' => ['id' => (int) $id, 'mercadolibre' => $ad]]);
         } catch (Throwable $e) {

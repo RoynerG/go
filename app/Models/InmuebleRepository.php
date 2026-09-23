@@ -505,7 +505,7 @@ final class InmuebleRepository
                     f.last_synced_at AS fincaraiz_last_synced_at
                     , ml.remote_status AS mercadolibre_remote_status, ml.sync_status AS mercadolibre_sync_status,
                     ml.desired_action AS mercadolibre_desired_action, ml.last_error AS mercadolibre_last_error,
-                    ml.listing_type_id AS mercadolibre_listing_type
+                    ml.listing_type_id AS mercadolibre_listing_type, ml.property_age AS mercadolibre_property_age
              FROM inmuebles i
              LEFT JOIN inmueble_ubicaciones u ON u.inmueble_id = i.id
              LEFT JOIN proppit_ads p ON p.inmueble_id = i.id

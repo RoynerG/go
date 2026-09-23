@@ -39,6 +39,21 @@ $_ENV['MERCADOLIBRE_REDIRECT_URI'] = 'https://example.com/callback';
 check(\App\Core\PortalDisplay::state('active') === 'Publicado', 'Estado remoto traducido');
 check(\App\Core\PortalDisplay::state('synced') === 'Confirmado', 'Cola no se confunde con publicacion');
 check(\App\Core\PortalDisplay::action('sync_error') === 'Validacion del inmueble', 'Error local identificado');
+$_ENV['MERCADOLIBRE_DEFAULT_PROPERTY_AGE'] = '';
+check(Builder::propertyAge([]) === null, 'No inventa edad si el valor provisional esta deshabilitado');
+check(Builder::propertyAge(['ano_construccion'=>(int) date('Y')-12]) === 12, 'Antiguedad desde ano de construccion');
+check(Builder::propertyAge(['ano_construccion'=>(int) date('Y')+1]) === null, 'No envia una antiguedad negativa');
+check(Builder::propertyAge(['source_payload'=>'{"edad_inmueble":0}']) === 0, 'Conserva antiguedad cero conocida');
+check(Builder::propertyAge(['source_payload'=>'{"edad_inmueble":"5 a 10"}']) === null, 'No transforma rangos en edades inventadas');
+$_ENV['MERCADOLIBRE_DEFAULT_PROPERTY_AGE'] = '8';
+check(Builder::propertyAge([]) === 8, 'Aplica el provisional elegido por el usuario');
+check(Builder::propertyAge(['mercadolibre_property_age'=>3]) === 3, 'Permite antiguedad elegida por inmueble');
+check(Builder::propertyAge(['ano_construccion'=>(int) date('Y')-12,'mercadolibre_property_age'=>3]) === 12, 'El dato real sustituye al provisional');
+check(Builder::fingerprint([], 'auto') !== Builder::fingerprint(['ano_construccion'=>(int) date('Y')-12], 'auto'), 'Actualizar el ano provoca nueva sincronizacion');
+$_ENV['MERCADOLIBRE_CONTACT_PHONE'] = '';
+$_ENV['MERCADOLIBRE_CONTACT_WHATSAPP'] = '';
+$_ENV['MERCADOLIBRE_CONTACT_EMAIL'] = '';
+check(count(Builder::contactIssues()) === 3, 'Contacto faltante se detecta antes de procesar cada inmueble');
 
 class MlFixtureClient extends MercadolibreClient
 {
@@ -107,6 +122,12 @@ $client->definitions[] = ['id' => 'ROOMS', 'name' => 'Ambientes', 'tags' => ['re
 rejects(fn () => $builder->build($property, 'silver'), 'ROOMS');
 $withRooms = $property + ['source_payload' => json_encode(['ambientes' => 4])];
 check(count(array_filter($builder->build($withRooms, 'silver')['attributes'], fn ($a) => $a['id'] === 'ROOMS' && $a['value_name'] === '4')) === 1, 'Ambientes proviene del dato explicito');
+array_pop($client->definitions);
+$client->definitions[] = ['id'=>'PROPERTY_AGE','name'=>'Antiguedad','value_type'=>'number_unit','default_unit'=>'anos','tags'=>['required'=>true]];
+$ageAttributes = $builder->build($property, 'silver')['attributes'];
+check(count(array_filter($ageAttributes, fn ($a) => $a['id'] === 'PROPERTY_AGE' && $a['value_name'] === '8 anos')) === 1, 'Edad provisional con unidad del catalogo');
+$ageAttributes = $builder->build($property + ['ano_construccion'=>(int) date('Y')-12], 'silver')['attributes'];
+check(count(array_filter($ageAttributes, fn ($a) => $a['id'] === 'PROPERTY_AGE' && $a['value_name'] === '12 anos')) === 1, 'Edad real reemplaza provisional en payload');
 array_pop($client->definitions);
 check(Sync::desiredAction($property, []) === 'publish', 'Nuevo inmueble se publica');
 check(Sync::desiredAction($property, ['external_id' => 'MCO123']) === 'update', 'Existente no se duplica');
@@ -197,6 +218,10 @@ if (in_array('--database', $argv, true)) {
     $repo->manual(1, 'pause');
     $repo->complete($ad, 'active');
     check($repo->ad(1)['sync_status'] === 'pending' && $repo->ad(1)['desired_action'] === 'pause', 'Resultado viejo no borra nueva accion');
+    $repo->savePropertyAge(1, 8);
+    check((int) $repo->ad(1)['property_age'] === 8 && $repo->ad(1)['intent'] === 'paused', 'Guardar edad no republica un inmueble pausado manualmente');
+    $repo->savePropertyAge(1, null);
+    check($repo->ad(1)['property_age'] === null, 'Permite quitar la antiguedad individual');
     $pdo->exec('UPDATE mercadolibre_ads SET uncertain=0');
     $repo->fail($ad, 'Creacion incierta con accion concurrente', true);
     check((int) $repo->ad(1)['uncertain'] === 1 && $repo->ad(1)['desired_action'] === 'pause', 'Creacion incierta conserva proteccion tras accion concurrente');

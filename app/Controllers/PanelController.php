@@ -24,7 +24,14 @@ final class PanelController
         }
         session_write_close();
         try {
-            Response::json(['ok' => true, 'operation' => $this->operation(new InmuebleRepository())]);
+            $data = ['ok' => true, 'operation' => $this->operation(new InmuebleRepository())];
+            if (isset($_GET['activity'])) {
+                $activity = (new \App\Models\OperationsRepository())->page($_GET);
+                ob_start();
+                Response::view('panel/activity-results', ['activity' => $activity]);
+                $data['activity_html'] = ob_get_clean();
+            }
+            Response::json($data);
         } catch (Throwable $e) {
             Response::json(['ok' => false, 'message' => 'No se pudo consultar la actividad.'], 500);
         }
@@ -37,12 +44,13 @@ final class PanelController
 
     public function queuePage(): void
     {
-        $this->renderPanelPage('cola-cron');
+        $this->renderPanelPage('operaciones');
     }
 
     public function logsPage(): void
     {
-        $this->renderPanelPage('logs');
+        $_GET['view'] = 'history';
+        $this->renderPanelPage('operaciones');
     }
 
     public function automationPage(): void
@@ -52,7 +60,8 @@ final class PanelController
 
     public function statesPage(): void
     {
-        $this->renderPanelPage('estados');
+        $_GET['view'] = 'errors';
+        $this->renderPanelPage('operaciones');
     }
 
     public function publishedPage(): void
@@ -146,6 +155,7 @@ final class PanelController
         try {
             $repository = new InmuebleRepository();
             Response::view('panel/inmuebles', [
+                'activity' => $activePage === 'operaciones' ? (new \App\Models\OperationsRepository())->page($_GET) : null,
                 'rows' => [],
                 'filters' => [],
                 'options' => $repository->filterOptions(),

@@ -1,5 +1,8 @@
 <section class="portal-overview" aria-label="Actividad por portal">
-  <div class="section-heading"><h2>Actividad por portal</h2><span class="live-status" data-operation-freshness role="status">Consultando actividad...</span></div>
+  <div class="section-heading"><h2>Ahora en los portales</h2><span class="live-status" data-operation-freshness role="status">Consultando actividad...</span></div>
+  <?php if (!$mlReady || \App\Services\MercadolibrePayloadBuilder::contactIssues()): ?>
+    <div class="configuration-alert"><strong>Mercado Libre: <?= !$mlReady ? (empty($operation['mercadolibre_connected']) ? 'cuenta pendiente' : 'sincronizacion desactivada o configuracion incompleta') : 'falta el contacto comercial' ?></strong><a class="refresh-button" href="<?= htmlspecialchars(\App\Core\Url::to('/panel/automatizacion')) ?>">Revisar conexion</a></div>
+  <?php endif; ?>
   <div class="property-table-wrap">
     <table class="operations-table"><thead><tr><th>Portal</th><th>Publicados</th><th>En espera</th><th>Procesando</th><th>Con error</th><th>Ultima confirmacion</th><th>Acciones</th></tr></thead><tbody>
       <?php foreach (['proppit'=>'Proppit', 'fincaraiz'=>'Finca Raiz', 'mercadolibre'=>'Mercado Libre'] as $portal => $label): ?>

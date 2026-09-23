@@ -3,6 +3,7 @@ $mlConnected = !empty($operation['mercadolibre_connected']);
 $mlConfigured = \App\Services\MercadolibreClient::configured();
 $mlEnabled = \App\Core\Env::bool('MERCADOLIBRE_ENABLED');
 $mlIssues = \App\Services\MercadolibreClient::configurationIssues();
+$mlContactIssues = \App\Services\MercadolibrePayloadBuilder::contactIssues();
 ?>
 <section class="ops-board ml-board" data-ml-board data-status-url="<?= htmlspecialchars(\App\Core\Url::to('/panel/mercadolibre/estado')) ?>">
   <div class="ops-heading">
@@ -26,6 +27,14 @@ $mlIssues = \App\Services\MercadolibreClient::configurationIssues();
       <ul><?php foreach ($mlIssues as $name => $reason): ?><li><code><?= htmlspecialchars($name) ?></code><span><?= htmlspecialchars($reason) ?></span></li><?php endforeach; ?></ul>
     </div>
   <?php endif; ?>
+  <?php if ($mlConnected && !$mlEnabled): ?>
+    <div class="configuration-alert" role="status"><strong>Cuenta conectada, publicaciones detenidas</strong><p>En portales-go/.env: <code>MERCADOLIBRE_ENABLED=true</code></p></div>
+  <?php endif; ?>
+  <?php if ($mlContactIssues): ?>
+    <div class="configuration-alert" role="status"><strong>Contacto comercial pendiente para publicar</strong><ul><?php foreach ($mlContactIssues as $name=>$reason): ?><li><code><?= htmlspecialchars($name) ?></code><span><?= htmlspecialchars($reason) ?></span></li><?php endforeach; ?></ul></div>
+  <?php endif; ?>
+  <?php $mlFallbackAge = trim((string) \App\Core\Env::get('MERCADOLIBRE_DEFAULT_PROPERTY_AGE', '8')); ?>
+  <?php if (preg_match('/^\d{1,3}$/D', $mlFallbackAge)): ?><p class="configuration-alert">Antiguedad provisional: <?= (int) $mlFallbackAge ?> anos, solo si falta el dato real.</p><?php endif; ?>
   <div class="ops-grid">
     <?php foreach (['published' => 'Publicados','pending' => 'En espera','processing' => 'Procesando','failed' => 'Con error'] as $key => $label): ?>
       <article><strong data-ml-metric="<?= $key ?>"><?= (int) ($mlQueue[$key] ?? 0) ?></strong><span><?= $label ?></span></article>

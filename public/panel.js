@@ -473,7 +473,9 @@
     });
   }
 
+  var panelNavigation = 0;
   function loadPanelUrl(url, pushState) {
+    var navigation = ++panelNavigation;
     document.body.classList.add('panel-loading');
     return fetch(url, {
       method: 'GET',
@@ -488,6 +490,7 @@
         return response.text();
       })
       .then(function (html) {
+        if (navigation !== panelNavigation) return;
         var doc = new DOMParser().parseFromString(html, 'text/html');
         var nextLayout = doc.querySelector('.portal-layout');
         var currentLayout = document.querySelector('.portal-layout');
@@ -495,7 +498,7 @@
           window.location.href = url;
           return;
         }
-        currentLayout.innerHTML = nextLayout.innerHTML;
+        currentLayout.replaceWith(nextLayout);
 
         var nextModal = doc.getElementById('property-modal');
         var currentModal = document.getElementById('property-modal');
@@ -511,15 +514,17 @@
         window.scrollTo({ top: 0, behavior: 'smooth' });
       })
       .catch(function (error) {
+        if (navigation !== panelNavigation) return;
         showResult('error', 'No se pudo cargar', error && error.message ? error.message : 'Revisa la conexion.');
       })
       .finally(function () {
+        if (navigation !== panelNavigation) return;
         document.body.classList.remove('panel-loading');
       });
   }
 
   function buildUrlFromForm(form) {
-    var url = new URL(form.action || window.location.href, window.location.origin);
+    var url = new URL(form.getAttribute('action') || window.location.href, window.location.origin);
     var params = new URLSearchParams();
     new FormData(form).forEach(function (value, key) {
       var textValue = String(value || '').trim();
@@ -555,7 +560,7 @@
   });
 
   document.addEventListener('submit', function (event) {
-    var filterForm = event.target.closest('form.admin-filter-panel');
+    var filterForm = event.target.closest('form.admin-filter-panel, form[data-activity-form]');
     if (filterForm) {
       event.preventDefault();
       loadPanelUrl(buildUrlFromForm(filterForm), true);
@@ -768,6 +773,14 @@
         updateText(root, '[data-operation-errors]', errors);
         updateText(root, '[data-inventory-available]', (operation.inventory || {}).available || 0);
         updateText(root, '[data-operation-freshness]', 'Actualizado ' + new Date().toLocaleTimeString('es-CO'));
+        var activity = root.querySelector('[data-activity-results]');
+        if (activity && typeof data.activity_html === 'string' && !activity.contains(document.activeElement)) {
+          var scroll = activity.querySelector('.property-table-wrap');
+          var left = scroll ? scroll.scrollLeft : 0;
+          activity.innerHTML = data.activity_html;
+          var nextScroll = activity.querySelector('.property-table-wrap');
+          if (nextScroll) nextScroll.scrollLeft = left;
+        }
         var body = root.querySelector('[data-operation-items]');
         if (body) {
           body.replaceChildren();
@@ -820,6 +833,11 @@
   });
 
   document.addEventListener('change', function (event) {
+    var activityForm = event.target.closest('[data-activity-form]');
+    if (activityForm && event.target.tagName === 'SELECT') {
+      loadPanelUrl(buildUrlFromForm(activityForm), true);
+      return;
+    }
     if (event.target && event.target.matches('[data-portal-select]')) {
       var form = event.target.form;
       ['proppit_estado','fincaraiz_estado','mercadolibre_estado','mercadolibre_cola','marcado'].forEach(function (name) { if (form.elements[name]) form.elements[name].value = ''; });
