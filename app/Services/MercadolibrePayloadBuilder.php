@@ -55,6 +55,7 @@ final class MercadolibrePayloadBuilder
         $data['source_attributes'] = array_intersect_key($source, array_flip(['ambientes','rooms','edad_inmueble','antiguedad','mercadolibre_attributes']));
         $data['property_age'] = self::propertyAge($property);
         $data['catalog_neighborhood_id'] = self::catalogNeighborhood((string) ($property['ubicacion']['barrio'] ?? ''))['id'] ?? '';
+        $data['payload_quality_version'] = 'mercadolibre-description-v2';
         foreach (['CONTACT_NAME','CONTACT_EMAIL','CONTACT_PHONE','CONTACT_WHATSAPP','DUAL_OFFER','CATEGORY_MAP','LOCATION_MAP'] as $key) {
             $data['config_' . $key] = Env::get('MERCADOLIBRE_' . $key, '');
         }
@@ -93,9 +94,9 @@ final class MercadolibrePayloadBuilder
             throw new RuntimeException('No hay fotos publicas: Mercado Libre requiere al menos una imagen.');
         }
         $title = trim(strip_tags((string) ($property['titulo'] ?? '')));
-        $description = trim(html_entity_decode(strip_tags((string) ($property['descripcion'] ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        $description = $this->descriptionText($property, $offer);
         if ($title === '' || $description === '') {
-            throw new RuntimeException('Falta titulo o descripcion del inmueble.');
+            throw new RuntimeException('Falta titulo del inmueble.');
         }
         $phone = $this->phone((string) Env::get('MERCADOLIBRE_CONTACT_PHONE', ''));
         $whatsapp = $this->phone((string) (Env::get('MERCADOLIBRE_CONTACT_WHATSAPP') ?: Env::get('MERCADOLIBRE_CONTACT_PHONE', '')));
@@ -188,6 +189,89 @@ final class MercadolibrePayloadBuilder
         return ['address_line' => $address, 'latitude' => $lat, 'longitude' => $lon,
             'country' => ['id' => 'CO'], 'state' => ['id' => $state['id']], 'city' => ['id' => $city['id']],
             'neighborhood' => ['id' => $neighborhood['id']]];
+    }
+
+    private function descriptionText(array $property, string $offer): string
+    {
+        $source = trim(html_entity_decode(strip_tags((string) ($property['descripcion'] ?? '')), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        $source = $this->cleanDescription($source);
+        $generated = $this->generatedDescription($property, $offer);
+
+        if ($source === '') {
+            return $generated;
+        }
+
+        if ($generated !== '' && mb_stripos($source, 'Caracteristicas principales') === false) {
+            return trim($source . "\n\n" . $generated);
+        }
+
+        return $source;
+    }
+
+    private function cleanDescription(string $text): string
+    {
+        $text = preg_replace('~https?://\S+|www\.\S+~i', '', $text) ?? $text;
+        $text = preg_replace('/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/i', '', $text) ?? $text;
+        $lines = preg_split('/\R+/', $text) ?: [$text];
+        $lines = array_filter(array_map('trim', $lines), function (string $line): bool {
+            return $line !== '' && !preg_match('/\b(whatsapp|telefono|tel[eé]fono|celular|contacto|instagram|facebook|direccion|direcci[oó]n)\b/i', $line);
+        });
+        return trim((string) preg_replace('/[ \t]+/', ' ', implode("\n", $lines)));
+    }
+
+    private function generatedDescription(array $property, string $offer): string
+    {
+        $location = $property['ubicacion'] ?? [];
+        $type = trim((string) ($property['tipo_inmueble'] ?? 'Inmueble')) ?: 'Inmueble';
+        $barrio = trim((string) ($location['barrio'] ?? ''));
+        $city = trim((string) ($location['ciudad'] ?? 'Cartagena')) ?: 'Cartagena';
+        $operation = $offer === 'rent' ? 'en arriendo' : 'en venta';
+        $lines = [];
+        $lines[] = trim($type . ' ' . $operation . ($barrio !== '' ? ' en ' . $barrio : '') . ', ' . $city . '.');
+
+        $specs = [];
+        foreach ([
+            'habitaciones' => 'habitaciones',
+            'banos' => 'banos',
+            'parqueaderos' => 'parqueaderos',
+            'pisos' => 'pisos',
+        ] as $field => $label) {
+            $value = filter_var($property[$field] ?? null, FILTER_VALIDATE_INT);
+            if ($value !== false && $value > 0) {
+                $specs[] = $value . ' ' . $label;
+            }
+        }
+        foreach ([
+            'area_construida' => 'm2 construidos',
+            'area_privada' => 'm2 privados',
+            'area_terreno' => 'm2 de lote',
+        ] as $field => $label) {
+            $value = filter_var($property[$field] ?? null, FILTER_VALIDATE_FLOAT);
+            if ($value !== false && $value > 0) {
+                $specs[] = rtrim(rtrim(number_format((float) $value, 1, '.', ''), '0'), '.') . ' ' . $label;
+            }
+        }
+        $estrato = filter_var($property['estrato'] ?? null, FILTER_VALIDATE_INT);
+        if ($estrato !== false && $estrato > 0) {
+            $specs[] = 'estrato ' . $estrato;
+        }
+        if ($specs) {
+            $lines[] = 'Caracteristicas principales: ' . implode(', ', $specs) . '.';
+        }
+
+        $features = [];
+        foreach ($property['caracteristicas'] ?? [] as $feature) {
+            $value = trim((string) ($feature['valor'] ?? ''));
+            if ($value !== '') {
+                $features[self::normalize($value)] = $value;
+            }
+        }
+        if ($features) {
+            $lines[] = 'Servicios y espacios: ' . implode(', ', array_slice(array_values($features), 0, 18)) . '.';
+        }
+
+        $lines[] = 'Informacion sujeta a validacion y disponibilidad.';
+        return trim(implode("\n", $lines));
     }
 
     public static function catalogNeighborhood(string $barrio): ?array

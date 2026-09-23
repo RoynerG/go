@@ -186,6 +186,11 @@ solo actualiza la cola: no publica inmediatamente ni borra una pausa manual.
 
 La conversion respeta el tipo y la unidad que devuelve el catalogo de
 [categorias y atributos de Mercado Libre](https://developers.mercadolibre.com.co/en_us/introduction-products/categories-and-attributes).
+Las descripciones se envian en el endpoint separado de Mercado Libre despues
+de crear el anuncio. Si la descripcion de origen esta vacia o viene pobre, el
+payload agrega una ficha textual con barrio, ciudad, habitaciones, banos,
+parqueaderos, areas, estrato y caracteristicas, sin telefonos, correos,
+redes ni direccion exacta.
 No se inventan equivalencias geograficas: los barrios sin coincidencia
 exacta requieren un cruce en `app_barrios_catalog` o, temporalmente,
 `MERCADOLIBRE_LOCATION_MAP` con un ID valido de la ciudad. Cambiar el cruce

@@ -208,6 +208,7 @@ final class MercadolibreSyncService
             }
             $item = MercadolibreClient::requireSuccess($result);
             $this->repository->rememberRemote((int) $ad['inmueble_id'], $item);
+            MercadolibreClient::requireSuccess($this->client->createDescription($item['id'], $payload['description']['plain_text']));
             $this->repository->submitted($ad);
             if ($this->remaining !== null) {
                 $this->remaining[$listingType] = max(0, ($this->remaining[$listingType] ?? 0) - 1);

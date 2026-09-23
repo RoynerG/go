@@ -97,6 +97,11 @@ class MercadolibreClient
         return $this->request('PUT', '/items/' . rawurlencode($id) . '/description', ['plain_text' => $text]);
     }
 
+    public function createDescription(string $id, string $text): array
+    {
+        return $this->request('POST', '/items/' . rawurlencode($id) . '/description', ['plain_text' => $text]);
+    }
+
     public function validate(array $payload): array
     {
         return $this->request('POST', '/items/validate', $payload);

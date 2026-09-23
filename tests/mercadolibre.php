@@ -113,7 +113,10 @@ check($payload['category_id'] === 'MCO_SALE' && $payload['price'] === 500000000.
 check($payload['pictures'][0]['source'] === 'https://example.com/a.jpg', 'Portada primero');
 check($payload['seller_contact']['phone2'] === '3000000000' && $payload['seller_contact']['country_code2'] === '57', 'WhatsApp separado del codigo de pais');
 check($payload['location']['neighborhood']['id'] === 'NEIGHBORHOOD', 'Barrio homologado');
-check($payload['description']['plain_text'] === 'Descripcion del inmueble de prueba.', 'Descripcion sin HTML');
+check(str_contains($payload['description']['plain_text'], 'Descripcion del inmueble de prueba.'), 'Descripcion conserva texto fuente sin HTML');
+check(str_contains($payload['description']['plain_text'], 'Caracteristicas principales'), 'Descripcion corta se enriquece con datos del inmueble');
+check(!str_contains($payload['description']['plain_text'], 'Direccion de prueba'), 'Descripcion no publica direccion exacta');
+check(str_contains($builder->build(array_replace($property, ['descripcion' => '']), 'silver')['description']['plain_text'], 'Apartamento en venta en Bocagrande'), 'Genera descripcion cuando falta en origen');
 $_ENV['MERCADOLIBRE_DUAL_OFFER'] = 'rent';
 check($builder->build($property, 'gold')['price'] === 2500000.0, 'Arriendo usa su precio');
 $_ENV['MERCADOLIBRE_DUAL_OFFER'] = 'sale';
@@ -197,7 +200,7 @@ if (in_array('--database', $argv, true)) {
     $client->replies = [
         ['GET','/users/123/items/search?sku=TEST-1',$ok(['results' => []])],
         ['GET','/users/123/classifieds_promotion_packs?package_content=publications&status=active',$ok([$pack])],
-        ['POST','/items/validate',$ok([])], ['POST','/items',$ok($remote)], ['GET','/items/MCO123',$ok($remote)],
+        ['POST','/items/validate',$ok([])], ['POST','/items',$ok($remote)], ['POST','/items/MCO123/description',$ok([])], ['GET','/items/MCO123',$ok($remote)],
     ];
     $service = new Sync($repo, $client);
     $method = new ReflectionMethod($service, 'syncOne');
@@ -267,7 +270,7 @@ if (in_array('--database', $argv, true)) {
     $repo->target($repo->ad(2), str_repeat('c',64), 'publish');
     $newRemote = array_replace($remote, ['id'=>'MCO456','seller_custom_field'=>'TEST-2','status'=>'not_yet_active']);
     $client->replies = [['GET','/users/123/items/search?sku=TEST-2',$ok(['results'=>[]])],
-        ['POST','/items/validate',$ok([])], ['POST','/items',$ok($newRemote)], ['GET','/items/MCO456',$ok($newRemote)]];
+        ['POST','/items/validate',$ok([])], ['POST','/items',$ok($newRemote)], ['POST','/items/MCO456/description',$ok([])], ['GET','/items/MCO456',$ok($newRemote)]];
     try {
         $method->invoke($service, $repo->ad(2), array_replace($property, ['id'=>2,'reference_id'=>'TEST-2']));
         throw new RuntimeException('Falta espera al crear');
