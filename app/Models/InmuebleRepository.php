@@ -570,12 +570,13 @@ final class InmuebleRepository
                 SUM(sync_status = 'processing') AS processing,
                 SUM(sync_status = 'synced') AS synced,
                 SUM(sync_status = 'failed') AS failed,
-                SUM(desired_action = 'publish') AS publish_actions,
-                SUM(desired_action = 'update') AS update_actions,
-                SUM(desired_action = 'delete') AS delete_actions,
+                SUM(desired_action = 'publish' AND sync_status IN ('pending','processing')) AS publish_actions,
+                SUM(desired_action = 'update' AND sync_status IN ('pending','processing')) AS update_actions,
+                SUM(desired_action = 'delete' AND sync_status IN ('pending','processing')) AS delete_actions,
                 SUM(remote_status = 'published') AS published,
                 SUM(remote_status = 'deleted') AS deleted,
                 SUM(remote_status = 'error') AS remote_errors,
+                SUM(sync_status = 'failed' OR remote_status = 'error') AS errors,
                 MAX(last_synced_at) AS last_synced_at,
                 MAX(updated_at) AS queue_updated_at
              FROM proppit_ads"
@@ -588,14 +589,15 @@ final class InmuebleRepository
                 SUM(sync_status = 'processing') AS processing,
                 SUM(sync_status = 'synced') AS synced,
                 SUM(sync_status = 'failed') AS failed,
-                SUM(desired_action = 'publish') AS publish_actions,
-                SUM(desired_action = 'update') AS update_actions,
-                SUM(desired_action = 'pause') AS pause_actions,
-                SUM(desired_action = 'activate') AS activate_actions,
-                SUM(desired_action = 'verify') AS verify_actions,
+                SUM(desired_action = 'publish' AND sync_status IN ('pending','processing')) AS publish_actions,
+                SUM(desired_action = 'update' AND sync_status IN ('pending','processing')) AS update_actions,
+                SUM(desired_action = 'pause' AND sync_status IN ('pending','processing')) AS pause_actions,
+                SUM(desired_action = 'activate' AND sync_status IN ('pending','processing')) AS activate_actions,
+                SUM(desired_action = 'verify' AND sync_status IN ('pending','processing')) AS verify_actions,
                 SUM(remote_status = 'active') AS published,
                 SUM(remote_status = 'disabled') AS paused,
                 SUM(remote_status = 'error') AS remote_errors,
+                SUM(sync_status = 'failed' OR remote_status = 'error') AS errors,
                 MAX(last_synced_at) AS last_synced_at,
                 MAX(updated_at) AS queue_updated_at
              FROM fincaraiz_ads"
@@ -624,6 +626,7 @@ final class InmuebleRepository
         )->fetchAll();
 
         return [
+            'inventory' => $this->pdo->query("SELECT COUNT(*) total, SUM(estado='disponible') available FROM inmuebles")->fetch(),
             'queue' => $proppitQueue,
             'logs' => $proppitLogs,
             'queue_items' => $this->portalQueueItems(30),
@@ -1312,6 +1315,10 @@ final class InmuebleRepository
         if (($filters['mercadolibre_cola'] ?? '') !== '') {
             $where[] = 'ml.sync_status = :mercadolibre_cola';
             $params['mercadolibre_cola'] = $filters['mercadolibre_cola'];
+        }
+        if (in_array($filters['disponibilidad'] ?? '', ['disponible', 'no_disponible'], true)) {
+            $where[] = 'i.estado = :disponibilidad';
+            $params['disponibilidad'] = $filters['disponibilidad'];
         }
         if (($filters['portal'] ?? '') === 'proppit') {
             $where[] = "(i.publicar_proppit = 1 OR p.remote_status IS NOT NULL AND p.remote_status <> 'not_sent')";

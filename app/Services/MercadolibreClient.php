@@ -19,10 +19,26 @@ class MercadolibreClient
 
     public static function configured(): bool
     {
-        return Env::get('MERCADOLIBRE_CLIENT_ID', '') !== ''
-            && Env::get('MERCADOLIBRE_CLIENT_SECRET', '') !== ''
-            && Env::get('MERCADOLIBRE_REDIRECT_URI', '') !== ''
-            && strlen((string) base64_decode(Env::get('MERCADOLIBRE_TOKEN_KEY', ''), true)) === 32;
+        return self::configurationIssues() === [];
+    }
+
+    public static function configurationIssues(): array
+    {
+        $issues = [];
+        foreach (['MERCADOLIBRE_CLIENT_ID', 'MERCADOLIBRE_CLIENT_SECRET', 'MERCADOLIBRE_REDIRECT_URI'] as $name) {
+            if (trim(Env::get($name, '')) === '') {
+                $issues[$name] = 'Falta configurar';
+            }
+        }
+        $redirect = Env::get('MERCADOLIBRE_REDIRECT_URI', '');
+        if ($redirect !== '' && (!filter_var($redirect, FILTER_VALIDATE_URL) || parse_url($redirect, PHP_URL_SCHEME) !== 'https')) {
+            $issues['MERCADOLIBRE_REDIRECT_URI'] = 'Debe ser una URL HTTPS valida';
+        }
+        $key = Env::get('MERCADOLIBRE_TOKEN_KEY', '');
+        if (strlen((string) base64_decode($key, true)) !== 32) {
+            $issues['MERCADOLIBRE_TOKEN_KEY'] = $key === '' ? 'Falta generar la clave de cifrado' : 'Debe ser base64 de 32 bytes';
+        }
+        return $issues;
     }
 
     public function authorizationUrl(string $state, string $verifier): string

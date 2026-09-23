@@ -27,6 +27,7 @@ $router->post('/panel/login', [\App\Controllers\AuthController::class, 'login'])
 $router->post('/logout', [\App\Controllers\AuthController::class, 'logout']);
 $router->get('/panel/inmuebles', [PanelController::class, 'index']);
 $router->get('/panel/cola-cron', [PanelController::class, 'queuePage']);
+$router->get('/panel/operacion/estado', [PanelController::class, 'operationStatus']);
 $router->get('/panel/logs', [PanelController::class, 'logsPage']);
 $router->get('/panel/automatizacion', [PanelController::class, 'automationPage']);
 $router->get('/panel/estados', [PanelController::class, 'statesPage']);

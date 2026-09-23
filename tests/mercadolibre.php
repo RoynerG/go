@@ -22,6 +22,24 @@ function rejects(callable $callback, string $text): void
     throw new RuntimeException('No se rechazo: ' . $text);
 }
 
+foreach (['CLIENT_ID','CLIENT_SECRET','REDIRECT_URI','TOKEN_KEY'] as $key) $_ENV['MERCADOLIBRE_' . $key] = '';
+check(count(MercadolibreClient::configurationIssues()) === 4, 'Diagnostico identifica las cuatro variables faltantes');
+$_ENV['MERCADOLIBRE_CLIENT_ID'] = 'test-app';
+$_ENV['MERCADOLIBRE_CLIENT_SECRET'] = 'test-secret-not-real';
+$_ENV['MERCADOLIBRE_REDIRECT_URI'] = 'https://example.com/callback';
+$_ENV['MERCADOLIBRE_TOKEN_KEY'] = base64_encode(str_repeat('x', 32));
+check(MercadolibreClient::configured(), 'Configuracion valida habilita conexion');
+$_ENV['MERCADOLIBRE_TOKEN_KEY'] = 'invalid-key';
+check(array_keys(MercadolibreClient::configurationIssues()) === ['MERCADOLIBRE_TOKEN_KEY'], 'Clave de cifrado invalida se identifica sin mostrar el secreto');
+check(!str_contains(json_encode(MercadolibreClient::configurationIssues()), 'test-secret-not-real'), 'Diagnostico no expone credenciales');
+$_ENV['MERCADOLIBRE_TOKEN_KEY'] = base64_encode(str_repeat('x', 32));
+$_ENV['MERCADOLIBRE_REDIRECT_URI'] = 'http://example.com/callback';
+check(!MercadolibreClient::configured(), 'Callback requiere HTTPS');
+$_ENV['MERCADOLIBRE_REDIRECT_URI'] = 'https://example.com/callback';
+check(\App\Core\PortalDisplay::state('active') === 'Publicado', 'Estado remoto traducido');
+check(\App\Core\PortalDisplay::state('synced') === 'Confirmado', 'Cola no se confunde con publicacion');
+check(\App\Core\PortalDisplay::action('sync_error') === 'Validacion del inmueble', 'Error local identificado');
+
 class MlFixtureClient extends MercadolibreClient
 {
     public array $calls = [];

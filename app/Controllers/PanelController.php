@@ -15,6 +15,21 @@ use Throwable;
 
 final class PanelController
 {
+    public function operationStatus(): void
+    {
+        header('Cache-Control: no-store');
+        if (!Auth::check()) {
+            Response::json(['ok' => false, 'message' => 'Inicia sesion.'], 401);
+            return;
+        }
+        session_write_close();
+        try {
+            Response::json(['ok' => true, 'operation' => $this->operation(new InmuebleRepository())]);
+        } catch (Throwable $e) {
+            Response::json(['ok' => false, 'message' => 'No se pudo consultar la actividad.'], 500);
+        }
+    }
+
     public function index(): void
     {
         $this->renderListPage('inmuebles');
@@ -233,6 +248,11 @@ final class PanelController
             Url::redirect('/panel/inmuebles');
         }
 
+        // Allow the read-only monitor to poll while the external request is running.
+        if ($this->wantsJson()) {
+            session_write_close();
+        }
+
         $type = 'success';
         $message = 'Cola procesada correctamente.';
         $payload = [];
@@ -290,6 +310,11 @@ final class PanelController
                 return;
             }
             Url::redirect('/panel/inmuebles');
+        }
+
+        // Allow the read-only monitor to poll while the external request is running.
+        if ($this->wantsJson()) {
+            session_write_close();
         }
 
         $type = 'success';
@@ -356,6 +381,11 @@ final class PanelController
             Url::redirect('/panel/inmuebles');
         }
 
+        // Allow the read-only monitor to poll while the external request is running.
+        if ($this->wantsJson()) {
+            session_write_close();
+        }
+
         $type = 'warning';
         $message = 'La accion quedo preparada, pero no se proceso ningun registro.';
 
@@ -402,6 +432,11 @@ final class PanelController
                 return;
             }
             Url::redirect('/panel/inmuebles');
+        }
+
+        // Allow the read-only monitor to poll while the external request is running.
+        if ($this->wantsJson()) {
+            session_write_close();
         }
 
         $type = 'warning';
@@ -478,6 +513,7 @@ final class PanelController
             'fincaraiz_estado' => trim((string) ($_GET['fincaraiz_estado'] ?? '')),
             'mercadolibre_estado' => trim((string) ($_GET['mercadolibre_estado'] ?? '')),
             'mercadolibre_cola' => trim((string) ($_GET['mercadolibre_cola'] ?? '')),
+            'disponibilidad' => trim((string) ($_GET['disponibilidad'] ?? '')),
             'portal' => trim((string) ($_GET['portal'] ?? '')),
         ];
     }

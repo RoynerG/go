@@ -1,4 +1,7 @@
 (function () {
+  function stateLabel(value) {
+    return ({pending:'En espera',processing:'Procesando',synced:'Confirmado',failed:'Con error',error:'Con error',published:'Publicado',active:'Publicado',disabled:'Despublicado',deleted:'Eliminado',paused:'Pausado',closed:'Finalizado',not_sent:'Sin publicar'})[value] || value || 'Sin actividad';
+  }
   var modal = document.getElementById('property-modal');
   var currentDetail = null;
 
@@ -228,6 +231,10 @@
 
   function updateText(root, selector, value) {
     var node = root ? root.querySelector(selector) : null;
+    if (/data-card-(?:ml-|fr-|proppit-)?(?:sync|remote)/.test(selector)) {
+      if (node) node.dataset.state = value || '';
+      value = stateLabel(value);
+    }
     if (node) node.textContent = value;
   }
 
@@ -405,6 +412,7 @@
       .then(function (payload) {
         updateQueueBoard(payload.operation);
         refreshMercadolibre();
+        refreshOperation();
         if (payload.cards && payload.cards.length) {
           payload.cards.forEach(updateCard);
         }
@@ -453,6 +461,7 @@
         })
         .then(function (payload) {
           if (payload.card) updateCard(payload.card);
+          refreshOperation();
           showResult(payload.type || (payload.ok ? 'success' : 'error'), payload.type === 'success' ? successTitle(label) : 'Atencion', payload.message || '');
         })
         .catch(function (error) {
@@ -659,6 +668,12 @@
           if (ok) visible++;
         });
         if (count) count.textContent = String(visible);
+        var activeFilter = !!query || fields.some(function (field) { return !!field.value; });
+        scope.querySelectorAll('.state-card').forEach(function (group) {
+          group.hidden = activeFilter && !Array.from(group.querySelectorAll('[data-filter-item]')).some(function (item) { return !item.hidden; });
+        });
+        var empty = scope.querySelector('[data-operation-empty]');
+        if (empty) { empty.hidden = visible > 0; empty.textContent = scope.querySelector('[data-filter-item]') ? 'No hay trabajos que coincidan con estos filtros.' : 'Sin trabajos pendientes ni errores registrados.'; }
       }
 
       if (search) search.addEventListener('input', apply);
@@ -676,13 +691,14 @@
     initLiveFilters();
     updateSelectedCount();
     refreshMercadolibre();
+    refreshOperation();
   }
 
   function updateMercadolibreCard(id, ad) {
     var row = document.querySelector('[data-property-id="' + String(id) + '"]');
     if (!row) return;
     updateText(row, '[data-card-ml-remote]', ad.remote_status || 'Sin publicar');
-    row.querySelectorAll('[data-card-ml-sync]').forEach(function (node) { node.textContent = ad.sync_status || 'Sin cola'; });
+    row.querySelectorAll('[data-card-ml-sync]').forEach(function (node) { node.textContent = stateLabel(ad.sync_status); node.dataset.state = ad.sync_status || ''; });
     updateText(row, '[data-card-ml-type]', ({silver:'Plata',gold:'Oro',gold_premium:'Oro Premium'})[ad.listing_type_id] || ad.listing_type_id || 'Sin asignar');
     updateText(row, '[data-card-ml-action]', portalActionText(ad.desired_action, ad.sync_status));
     var error = row.querySelector('[data-card-ml-error]');
@@ -709,17 +725,76 @@
           body.replaceChildren();
           (data.items || []).forEach(function (ad) {
             var row = document.createElement('tr');
-            [ad.reference_id + ' · ' + (ad.titulo || 'Inmueble retirado'), portalActionText(ad.desired_action, ad.sync_status), ad.sync_status, ad.remote_status, ad.last_error || ''].forEach(function (value) {
+            [ad.reference_id + ' · ' + (ad.titulo || 'Inmueble retirado'), portalActionText(ad.desired_action, ad.sync_status), stateLabel(ad.sync_status), stateLabel(ad.remote_status), ad.last_error || ''].forEach(function (value) {
               var cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell);
             });
             body.appendChild(row);
           });
+          if (!(data.items || []).length) {
+            var emptyRow = document.createElement('tr'); var emptyCell = document.createElement('td');
+            emptyCell.colSpan = 5; emptyCell.textContent = 'Sin operaciones registradas en Mercado Libre.';
+            emptyRow.appendChild(emptyCell); body.appendChild(emptyRow);
+          }
         }
       })
       .catch(function () { updateText(board, '[data-ml-last-sync]', 'No se pudo consultar el estado; reintentando'); })
       .finally(function () { mlPollBusy = false; });
   }
   window.setInterval(refreshMercadolibre, 15000);
+
+  var operationBusy = false;
+  function refreshOperation() {
+    var root = document.querySelector('[data-operation-url]');
+    if (!root || operationBusy || document.hidden) return;
+    operationBusy = true;
+    fetch(root.dataset.operationUrl, {credentials:'same-origin', headers:{Accept:'application/json'}})
+      .then(function (response) { if (!response.ok) throw new Error('status'); return response.json(); })
+      .then(function (data) {
+        if (!data.ok || !root.isConnected) return;
+        var operation = data.operation; var pending = 0; var errors = 0;
+        Object.keys(operation.portals || {}).forEach(function (portal) {
+          var metrics = operation.portals[portal].queue || {};
+          pending += Number(metrics.pending || 0) + Number(metrics.processing || 0);
+          errors += Number(metrics.errors == null ? metrics.failed || 0 : metrics.errors);
+          root.querySelectorAll('[data-operation-metric]').forEach(function (node) {
+            var key = node.dataset.operationMetric.split(':');
+            if (key[0] !== portal) return;
+            var value = metrics[key[1]];
+            if (key[1] === 'errors' && value == null) value = metrics.failed;
+            node.textContent = value == null ? (key[1] === 'last_synced_at' ? 'Sin confirmaciones' : '0') : String(value);
+          });
+        });
+        updateText(root, '[data-operation-pending]', pending);
+        updateText(root, '[data-operation-errors]', errors);
+        updateText(root, '[data-inventory-available]', (operation.inventory || {}).available || 0);
+        updateText(root, '[data-operation-freshness]', 'Actualizado ' + new Date().toLocaleTimeString('es-CO'));
+        var body = root.querySelector('[data-operation-items]');
+        if (body) {
+          body.replaceChildren();
+          (operation.queue_items || []).forEach(function (item) {
+            var row = document.createElement('tr'); row.dataset.filterItem = '';
+            row.dataset.filterPortal = item.portal; row.dataset.filterAction = item.desired_action; row.dataset.filterStatus = item.sync_status;
+            row.dataset.filterText = [item.reference_id,item.titulo,item.barrio].join(' ').toLowerCase();
+            var property = document.createElement('td'); var link = document.createElement('a');
+            link.className = 'refresh-button property-reference'; link.textContent = item.titulo || 'Inmueble retirado';
+            link.href = root.dataset.propertyListUrl + '?' + new URLSearchParams({codigo:item.reference_id,portal:item.portal});
+            property.appendChild(link); var code = document.createElement('small'); code.textContent = 'ID ' + item.reference_id + ' · ' + (item.barrio || ''); property.appendChild(code); row.appendChild(property);
+            [item.portal_label,item.action_label,stateLabel(item.sync_status),item.last_error || ''].forEach(function (value, index) {
+              var cell = document.createElement('td');
+              if (index === 2) { var badge = document.createElement('span'); badge.className='table-pill'; badge.dataset.state=item.sync_status; badge.textContent=value; cell.appendChild(badge); }
+              else { cell.textContent=value; if (index===3) cell.className='operation-detail'; }
+              row.appendChild(cell);
+            });
+            body.appendChild(row);
+          });
+          var empty = root.querySelector('[data-operation-empty]'); if (empty) empty.hidden = !!(operation.queue_items || []).length;
+          var filter = root.querySelector('[data-queue-monitor] [data-filter-search]'); if (filter) filter.dispatchEvent(new Event('input'));
+        }
+      })
+      .catch(function () { if (root.isConnected) updateText(root, '[data-operation-freshness]', 'Sin conexion · Datos anteriores'); })
+      .finally(function () { operationBusy = false; });
+  }
+  window.setInterval(refreshOperation, 15000);
 
   document.addEventListener('submit', function (event) {
     var form = event.target.closest('form[data-ml-packs]');
@@ -745,6 +820,11 @@
   });
 
   document.addEventListener('change', function (event) {
+    if (event.target && event.target.matches('[data-portal-select]')) {
+      var form = event.target.form;
+      ['proppit_estado','fincaraiz_estado','mercadolibre_estado','mercadolibre_cola','marcado'].forEach(function (name) { if (form.elements[name]) form.elements[name].value = ''; });
+      loadPanelUrl(buildUrlFromForm(form), true);
+    }
     if (event.target && event.target.matches('[data-row-check]')) updateSelectedCount();
   });
 

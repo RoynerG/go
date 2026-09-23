@@ -33,6 +33,20 @@
    php cron/mercadolibre-sync.php --dry-run
    ```
 
+En **Conexiones y cron**, el diagnostico enumera los nombres de las variables
+faltantes o invalidas, nunca sus valores. Client ID y Client Secret no bastan:
+tambien se necesitan el Redirect URI y la clave TOKEN_KEY de 32 bytes.
+Despues se autoriza la cuenta con **Conectar cuenta**. La clave TOKEN_KEY es
+propia de esta instalacion, no se obtiene de Mercado Libre ni se sustituye por
+el Client Secret.
+
+**Cola de publicaciones** muestra tareas pendientes, en proceso y fallidas por
+inmueble y portal; se consulta de nuevo cada 15 segundos sin perder sus filtros.
+**Historial de operaciones** conserva resultados ya registrados. La ultima
+confirmacion de un anuncio no demuestra por si sola que el cron siga programado
+en el hosting. Los numeros de publicaciones son los estados registrados en la
+integracion, no una consulta en tiempo real al inventario de cada portal.
+
 El modo de inspeccion muestra cuantos se publicarian, actualizarian o pausarian.
 No llama a Mercado Libre ni modifica anuncios o colas; crea las tablas de soporte
 si todavia no existen, igual que el panel.

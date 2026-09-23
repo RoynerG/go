@@ -8,15 +8,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260922-ml1">
+  <link rel="stylesheet" href="<?= htmlspecialchars(\App\Core\Url::to('/assets.css')) ?>?v=20260922-ops2">
 </head>
 <body class="portal-page">
 <?php
 $pagination = $pagination ?? ['page' => 1, 'per_page' => 12, 'total' => count($rows), 'total_pages' => 1];
 $total = (int) (($pagination['total'] ?? null) ?: count($rows));
-$published = count(array_filter($rows, fn ($row) => (int) ($row['publicar_proppit'] ?? 0) === 1));
-$pending = count(array_filter($rows, fn ($row) => in_array(($row['sync_status'] ?? ''), ['pending', 'processing'], true) || in_array(($row['fincaraiz_sync_status'] ?? ''), ['pending', 'processing'], true)));
-$failed = count(array_filter($rows, fn ($row) => ($row['sync_status'] ?? '') === 'failed' || ($row['remote_status'] ?? '') === 'error' || ($row['fincaraiz_sync_status'] ?? '') === 'failed' || ($row['fincaraiz_remote_status'] ?? '') === 'error'));
 $user = \App\Core\Auth::user();
 $csrf = \App\Core\Auth::csrf();
 $filters = $filters ?? [];
@@ -27,17 +24,19 @@ $portalOps = $operation['portals'] ?? [];
 $queue = $portalOps['proppit']['queue'] ?? $operation['queue'] ?? [];
 $fincaraizQueue = $portalOps['fincaraiz']['queue'] ?? [];
 $mlQueue = $portalOps['mercadolibre']['queue'] ?? [];
+$stateLabel = [\App\Core\PortalDisplay::class, 'state'];
+$mlReady = \App\Services\MercadolibreClient::configured() && !empty($operation['mercadolibre_connected']) && \App\Core\Env::bool('MERCADOLIBRE_ENABLED');
 $queueItems = $operation['queue_items'] ?? [];
 $stateSummary = $operation['state_summary'] ?? ['publicados' => [], 'eliminados' => [], 'errores' => []];
 $fincaraizQuota = (int) ($fincaraizQueue['quota'] ?? (\App\Core\Env::get('FINCARAIZ_QUOTA', '50') ?: 50));
 $fincaraizQuotaUsed = (int) ($fincaraizQueue['quota_used'] ?? $fincaraizQueue['published'] ?? 0);
-$statsTotal = (int) ($queue['total'] ?? $total);
+$statsTotal = (int) ($operation['inventory']['total'] ?? $total);
+$statsAvailable = (int) ($operation['inventory']['available'] ?? 0);
 $statsPublished = (int) ($queue['published'] ?? 0);
 $statsFincaraizPublished = (int) ($fincaraizQueue['published'] ?? 0);
 $statsFincaraizPaused = (int) ($fincaraizQueue['paused'] ?? 0);
 $statsPending = (int) ($queue['pending'] ?? 0) + (int) ($queue['processing'] ?? 0) + (int) ($fincaraizQueue['pending'] ?? 0) + (int) ($fincaraizQueue['processing'] ?? 0);
-$statsUnpublished = max(0, $statsTotal - $statsPublished);
-$statsErrors = (int) ($queue['failed'] ?? 0) + (int) ($queue['remote_errors'] ?? 0) + (int) ($fincaraizQueue['failed'] ?? 0) + (int) ($fincaraizQueue['remote_errors'] ?? 0);
+$statsErrors = (int) ($queue['errors'] ?? 0) + (int) ($fincaraizQueue['errors'] ?? 0);
 $statsPending += (int) ($mlQueue['pending'] ?? 0) + (int) ($mlQueue['processing'] ?? 0);
 $statsErrors += (int) ($mlQueue['failed'] ?? 0);
 $logs = $operation['logs'] ?? [];
@@ -52,10 +51,10 @@ $activePage = $activePage ?? 'inmuebles';
 $listPages = ['inmuebles', 'publicados', 'eliminados', 'errores'];
 $isListPage = in_array($activePage, $listPages, true);
 $pageTitles = [
-  'inmuebles' => 'Inmuebles disponibles',
-  'cola-cron' => 'Monitor de portales',
-  'logs' => 'Logs recientes',
-  'automatizacion' => 'Cron automatico',
+  'inmuebles' => 'Inmuebles',
+  'cola-cron' => 'Cola de publicaciones',
+  'logs' => 'Historial de operaciones',
+  'automatizacion' => 'Conexiones y cron',
   'estados' => 'Estados y errores',
   'publicados' => 'Inmuebles publicados',
   'eliminados' => 'Inmuebles eliminados',
@@ -96,7 +95,7 @@ $actionPortalLabel = ['fincaraiz' => 'Finca Raiz', 'mercadolibre' => 'Mercado Li
 $from = $pagination['total'] > 0 ? (($pagination['page'] - 1) * $pagination['per_page']) + 1 : 0;
 $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
 ?>
-  <main class="portal-layout">
+  <main class="portal-layout" data-operation-url="<?= htmlspecialchars(\App\Core\Url::to('/panel/operacion/estado')) ?>" data-property-list-url="<?= htmlspecialchars(\App\Core\Url::to('/panel/inmuebles')) ?>">
     <aside class="portal-sidebar">
       <nav class="side-menu" aria-label="Menu del panel">
         <div class="side-brand">
@@ -106,18 +105,17 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
         </div>
         <p class="side-label">General</p>
         <a<?= $activeClass('inmuebles') ?> href="<?= htmlspecialchars(\App\Core\Url::to('/panel/inmuebles')) ?>">Panel de propiedades</a>
-        <a<?= $activeClass('cola-cron') ?> href="<?= htmlspecialchars(\App\Core\Url::to('/panel/cola-cron')) ?>">Monitor de portales</a>
+        <a<?= $activeClass('cola-cron') ?> href="<?= htmlspecialchars(\App\Core\Url::to('/panel/cola-cron')) ?>">Cola de publicaciones</a>
         <a<?= $activeClass('estados') ?> href="<?= htmlspecialchars(\App\Core\Url::to('/panel/estados')) ?>">Estados y errores</a>
         <p class="side-label">Sistema</p>
-        <a<?= $activeClass('logs') ?> href="<?= htmlspecialchars(\App\Core\Url::to('/panel/logs')) ?>">Logs recientes</a>
-        <a<?= $activeClass('automatizacion') ?> href="<?= htmlspecialchars(\App\Core\Url::to('/panel/automatizacion')) ?>">Cron automatico</a>
+        <a<?= $activeClass('logs') ?> href="<?= htmlspecialchars(\App\Core\Url::to('/panel/logs')) ?>">Historial de operaciones</a>
+        <a<?= $activeClass('automatizacion') ?> href="<?= htmlspecialchars(\App\Core\Url::to('/panel/automatizacion')) ?>">Conexiones y cron</a>
       </nav>
       <section class="sidebar-status">
         <strong>Colas activas</strong>
-        <span>Proppit: <?= (int) ($queue['pending'] ?? 0) ?> pendientes · <?= (int) ($queue['failed'] ?? 0) ?> fallidos</span>
-        <span>Finca Raiz: <?= (int) ($fincaraizQueue['pending'] ?? 0) ?> pendientes · <?= $statsFincaraizPublished ?>/<?= $fincaraizQuota ?> activos</span>
-        <span>Mercado Libre: <b data-ml-metric="pending"><?= (int) ($mlQueue['pending'] ?? 0) ?></b> pendientes</span>
-        <span><?= $statsFincaraizPaused ?> desactivados · <?= $fincaraizQuotaUsed ?> marcados para cupo</span>
+        <?php foreach (['proppit'=>'Proppit','fincaraiz'=>'Finca Raiz','mercadolibre'=>'Mercado Libre'] as $portal=>$label): ?>
+        <span><?= $label ?>: <b data-operation-metric="<?= $portal ?>:pending"><?= (int) ($portalOps[$portal]['queue']['pending'] ?? 0) ?></b> en espera · <b data-operation-metric="<?= $portal ?>:failed"><?= (int) ($portalOps[$portal]['queue']['failed'] ?? 0) ?></b> con error</span>
+        <?php endforeach; ?>
       </section>
     </aside>
 
@@ -142,7 +140,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
         <div>
           <h2><?= htmlspecialchars($pageTitle) ?><?= $isListPage ? ': ' . $total : '' ?></h2>
           <?php if ($isListPage): ?>
-            <p>Mostrando <?= $from ?>-<?= $to ?> de <?= (int) $pagination['total'] ?> · <?= $published ?> marcados en portal · <?= $pending ?> pendientes · <?= $failed ?> con error</p>
+            <p><?= $from ?>-<?= $to ?> de <?= (int) $pagination['total'] ?> inmuebles · <?= $portalFilter === '' ? 'Todos los portales' : htmlspecialchars($actionPortalLabel) ?></p>
           <?php else: ?>
             <p>Resumen operativo de Proppit, Finca Raiz y Mercado Libre.</p>
           <?php endif; ?>
@@ -151,33 +149,33 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
 
       <section class="stats-grid" aria-label="Resumen de portales">
         <article>
-          <span>Propiedades publicas</span>
-          <strong><?= $statsTotal ?></strong>
+          <span>Inmuebles disponibles</span>
+          <strong data-inventory-available><?= $statsAvailable ?></strong><small><?= $statsTotal ?> registros en total</small>
         </article>
         <article>
           <span>Publicados Proppit</span>
-          <strong><?= $statsPublished ?></strong>
+          <strong data-operation-metric="proppit:published"><?= $statsPublished ?></strong>
         </article>
         <article>
           <span>Activos Finca Raiz</span>
-          <strong><?= $statsFincaraizPublished ?>/<?= $fincaraizQuota ?></strong>
-          <small><?= $fincaraizQuotaUsed ?> marcados · <?= $statsFincaraizPaused ?> desactivados</small>
+          <strong><span data-operation-metric="fincaraiz:published"><?= $statsFincaraizPublished ?></span> / <?= $fincaraizQuota ?></strong>
+          <small>Cupo contratado · Estado registrado</small>
         </article>
         <article>
-          <span>Sin publicar</span>
-          <strong><?= $statsUnpublished ?></strong>
+          <span>Publicados Mercado Libre</span>
+          <strong data-operation-metric="mercadolibre:published"><?= (int) ($mlQueue['published'] ?? 0) ?></strong><small><?= $mlReady ? 'Sincronizacion habilitada' : 'Conexion pendiente o desactivada' ?></small>
         </article>
         <article>
-          <span>Portales en proceso</span>
-          <strong><?= $statsPending ?></strong>
+          <span>En espera y procesando</span>
+          <strong data-operation-pending><?= $statsPending ?></strong>
         </article>
         <article>
           <span>Errores en portales</span>
-          <strong><?= $statsErrors ?></strong>
+          <strong data-operation-errors><?= $statsErrors ?></strong>
         </article>
       </section>
 
-      <?php if ($portalFilter === 'mercadolibre' || in_array($activePage, ['cola-cron','automatizacion'], true)): ?>
+      <?php if ($portalFilter === 'mercadolibre' || $activePage === 'automatizacion'): ?>
         <?php require __DIR__ . '/mercadolibre.php'; ?>
       <?php endif; ?>
 
@@ -193,18 +191,16 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
             <input type="text" name="codigo" value="<?= htmlspecialchars((string) ($filters['codigo'] ?? '')) ?>" placeholder="Codigo">
           </label>
           <label>
-            <span>Orden</span>
-            <select name="orden">
-              <option value="">Mas recientes</option>
-            </select>
+            <span>Disponibilidad</span>
+            <select name="disponibilidad"><option value="">Todas</option><option value="disponible"<?= $selected('disponibilidad','disponible') ?>>Disponible</option><option value="no_disponible"<?= $selected('disponibilidad','no_disponible') ?>>No disponible</option></select>
           </label>
           <button class="filter-submit" type="submit">Buscar</button>
           <a class="refresh-button" href="<?= htmlspecialchars($currentUrl) ?>" aria-label="Actualizar">Actualizar</a>
         </div>
         <div class="filter-grid">
           <label>
-            <span>Portal de accion</span>
-            <select name="portal">
+            <span>Portal</span>
+            <select name="portal" data-portal-select>
               <?php if ($activePage === 'inmuebles'): ?>
                 <option value=""<?= $selected('portal', '') ?>>Todos los portales</option>
               <?php endif; ?>
@@ -213,7 +209,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
               <option value="mercadolibre"<?= $portalFilter === 'mercadolibre' ? ' selected' : '' ?>>Mercado Libre</option>
             </select>
           </label>
-          <label>
+          <label <?= $portalFilter === '' ? 'hidden' : '' ?>>
             <span>Marcado en portal</span>
             <select name="marcado">
               <option value="">Cualquier estado</option>
@@ -221,12 +217,12 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
               <option value="no"<?= $selected('marcado', 'no') ?>>No</option>
             </select>
           </label>
-          <label>
+          <label data-portal-filter="proppit" <?= !in_array($portalFilter, ['', 'proppit'], true) ? 'hidden' : '' ?>>
             <span>Estado Proppit</span>
             <select name="proppit_estado">
               <option value="">Cualquier estado registrado</option>
               <?php foreach ($options['proppit_estados'] as $option): ?>
-                <option value="<?= htmlspecialchars($option) ?>"<?= $selected('proppit_estado', $option) ?>><?= htmlspecialchars($option) ?></option>
+                <option value="<?= htmlspecialchars($option) ?>"<?= $selected('proppit_estado', $option) ?>><?= htmlspecialchars($stateLabel($option)) ?></option>
               <?php endforeach; ?>
             </select>
           </label>
@@ -280,12 +276,12 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
               <?php endforeach; ?>
             </select>
           </label>
-          <label>
+          <label data-portal-filter="fincaraiz" <?= !in_array($portalFilter, ['', 'fincaraiz'], true) ? 'hidden' : '' ?>>
             <span>Estado Finca Raiz</span>
             <select name="fincaraiz_estado">
               <option value="">Todos</option>
               <?php foreach ($options['fincaraiz_estados'] as $option): ?>
-                <option value="<?= htmlspecialchars($option) ?>"<?= $selected('fincaraiz_estado', $option) ?>><?= htmlspecialchars($option) ?></option>
+                <option value="<?= htmlspecialchars($option) ?>"<?= $selected('fincaraiz_estado', $option) ?>><?= htmlspecialchars($stateLabel($option)) ?></option>
               <?php endforeach; ?>
             </select>
           </label>
@@ -293,249 +289,33 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
         </div>
       </form>
 
-      <section class="bulk-actions-panel">
-        <div>
-          <strong>Acciones masivas: <?= htmlspecialchars($actionPortalLabel) ?></strong>
-          <span>Procesa los pendientes del portal que estas viendo.</span>
-        </div>
-        <form method="post" action="<?= htmlspecialchars(\App\Core\Url::to('/panel/' . $actionPortal . '/procesar-cola')) ?>" data-ajax-queue data-action-label="<?= htmlspecialchars('procesar ' . strtolower($actionPortalLabel)) ?>">
-          <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf) ?>">
-          <input type="hidden" name="_redirect" value="<?= htmlspecialchars($currentUrl) ?>">
-          <input type="hidden" name="limit" value="20">
-          <select aria-label="Portal"><option><?= htmlspecialchars($actionPortalLabel) ?></option></select>
-          <select aria-label="Accion"><option>Procesar cola</option></select>
-          <select aria-label="Aplicar a"><option>Pendientes de <?= htmlspecialchars($actionPortalLabel) ?></option></select>
-          <button type="submit">Ejecutar accion</button>
+      <?php if ($portalFilter !== ''): ?>
+      <section class="queue-toolbar">
+        <strong>Pendientes de <?= htmlspecialchars($actionPortalLabel) ?></strong>
+        <a class="refresh-button" href="<?= htmlspecialchars(\App\Core\Url::to('/panel/cola-cron')) ?>">Ver cola y errores</a>
+        <form method="post" action="<?= htmlspecialchars(\App\Core\Url::to('/panel/' . $actionPortal . '/procesar-cola')) ?>" data-ajax-queue data-action-label="<?= htmlspecialchars('procesar ' . $actionPortalLabel) ?>">
+          <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf) ?>"><input type="hidden" name="limit" value="20">
+          <button type="submit" <?= $actionPortal === 'mercadolibre' && (!$mlReady) ? 'disabled' : '' ?>>Procesar pendientes</button>
         </form>
-        <div class="selection-bar">
-          <button type="button" data-select-page>Seleccionar pagina</button>
-          <span><strong data-selected-count>0</strong> seleccionados</span>
-          <a href="<?= htmlspecialchars(\App\Core\Url::to('/panel/automatizacion')) ?>">Ver automatizacion</a>
-        </div>
       </section>
+      <?php endif; ?>
       <?php endif; ?>
 
       <?php if ($activePage === 'cola-cron'): ?>
-      <section class="ops-board" id="cola-cron">
-        <div class="ops-heading">
-          <div>
-            <h2>Proppit</h2>
-            <p>Publicar, actualizar y despublicar.</p>
-          </div>
-          <form method="post" action="<?= htmlspecialchars(\App\Core\Url::to('/panel/proppit/procesar-cola')) ?>" data-ajax-queue data-action-label="procesar cola">
-            <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf) ?>">
-            <input type="hidden" name="_redirect" value="<?= htmlspecialchars($currentUrl) ?>">
-            <input type="hidden" name="limit" value="10">
-            <button type="submit">PROCESAR COLA</button>
-          </form>
-          <span>Ultima sync: <strong data-queue-last-sync><?= htmlspecialchars((string) ($queue['last_synced_at'] ?? 'sin registros')) ?></strong></span>
-        </div>
-        <div class="ops-grid">
-          <article><strong data-queue-metric="pending"><?= (int) ($queue['pending'] ?? 0) ?></strong><span>Pendientes</span></article>
-          <article><strong data-queue-metric="processing"><?= (int) ($queue['processing'] ?? 0) ?></strong><span>Procesando</span></article>
-          <article><strong data-queue-metric="synced"><?= (int) ($queue['synced'] ?? 0) ?></strong><span>Sincronizados</span></article>
-          <article><strong data-queue-metric="failed"><?= (int) ($queue['failed'] ?? 0) ?></strong><span>Fallidos</span></article>
-          <article><strong data-queue-metric="publish_actions"><?= (int) ($queue['publish_actions'] ?? 0) ?></strong><span>Publicar</span></article>
-          <article><strong data-queue-metric="update_actions"><?= (int) ($queue['update_actions'] ?? 0) ?></strong><span>Actualizar</span></article>
-          <article><strong data-queue-metric="delete_actions"><?= (int) ($queue['delete_actions'] ?? 0) ?></strong><span>Despublicar</span></article>
-          <article><strong data-queue-metric="remote_errors"><?= (int) ($queue['remote_errors'] ?? 0) ?></strong><span>Errores Proppit</span></article>
-        </div>
-      </section>
-      <section class="ops-board">
-        <div class="ops-heading">
-          <div>
-            <h2>Finca Raiz</h2>
-            <p>Publicar, actualizar, pausar y verificar tareas.</p>
-          </div>
-          <form method="post" action="<?= htmlspecialchars(\App\Core\Url::to('/panel/fincaraiz/procesar-cola')) ?>" data-ajax-queue data-action-label="procesar finca raiz">
-            <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf) ?>">
-            <input type="hidden" name="_redirect" value="<?= htmlspecialchars($currentUrl) ?>">
-            <input type="hidden" name="limit" value="10">
-            <button type="submit">PROCESAR FINCA RAIZ</button>
-          </form>
-          <span>Ultima sync: <strong data-portal-queue-last-sync="fincaraiz"><?= htmlspecialchars((string) ($fincaraizQueue['last_synced_at'] ?? 'sin registros')) ?></strong></span>
-        </div>
-        <div class="ops-grid">
-          <article><strong data-portal-queue-metric="fincaraiz:pending"><?= (int) ($fincaraizQueue['pending'] ?? 0) ?></strong><span>Pendientes</span></article>
-          <article><strong data-portal-queue-metric="fincaraiz:processing"><?= (int) ($fincaraizQueue['processing'] ?? 0) ?></strong><span>Procesando</span></article>
-          <article><strong data-portal-queue-metric="fincaraiz:synced"><?= (int) ($fincaraizQueue['synced'] ?? 0) ?></strong><span>Sincronizados</span></article>
-          <article><strong data-portal-queue-metric="fincaraiz:failed"><?= (int) ($fincaraizQueue['failed'] ?? 0) ?></strong><span>Fallidos</span></article>
-          <article><strong data-portal-queue-metric="fincaraiz:publish_actions"><?= (int) ($fincaraizQueue['publish_actions'] ?? 0) ?></strong><span>Publicar</span></article>
-          <article><strong data-portal-queue-metric="fincaraiz:update_actions"><?= (int) ($fincaraizQueue['update_actions'] ?? 0) ?></strong><span>Actualizar</span></article>
-          <article><strong data-portal-queue-metric="fincaraiz:pause_actions"><?= (int) ($fincaraizQueue['pause_actions'] ?? 0) ?></strong><span>Despublicar</span></article>
-          <article><strong data-portal-queue-metric="fincaraiz:verify_actions"><?= (int) ($fincaraizQueue['verify_actions'] ?? 0) ?></strong><span>Verificar</span></article>
-        </div>
-      </section>
-      <section class="queue-panel">
-        <div class="ops-heading">
-          <div>
-            <h2>Inmuebles en cola</h2>
-            <p>Lo que el cron va a procesar, separado por portal y accion.</p>
-          </div>
-        </div>
-        <div class="panel-filter-strip" data-live-filter="queue">
-          <label>
-            <span>Buscar inmueble</span>
-            <input type="search" data-filter-search placeholder="Codigo, titulo, barrio...">
-          </label>
-          <label>
-            <span>Portal</span>
-            <select data-filter-field="portal">
-              <option value="">Todos</option>
-              <option value="proppit">Proppit</option>
-              <option value="fincaraiz">Finca Raiz</option>
-              <option value="mercadolibre">Mercado Libre</option>
-            </select>
-          </label>
-          <label>
-            <span>Accion</span>
-            <select data-filter-field="action">
-              <option value="">Todas</option>
-              <option value="publish">Publicar</option>
-              <option value="update">Actualizar</option>
-              <option value="delete">Despublicar Proppit</option>
-              <option value="pause">Despublicar Finca</option>
-              <option value="activate">Activar Finca</option>
-              <option value="verify">Verificar Finca</option>
-            </select>
-          </label>
-          <label>
-            <span>Estado cola</span>
-            <select data-filter-field="status">
-              <option value="">Todos</option>
-              <option value="pending">Pendiente</option>
-              <option value="processing">Procesando</option>
-              <option value="failed">Fallido</option>
-            </select>
-          </label>
-          <strong><span data-filter-count><?= count($queueItems) ?></span> visibles</strong>
-        </div>
-        <?php if ($queueItems): ?>
-          <div class="queue-list">
-            <?php foreach ($queueItems as $item): ?>
-              <?php
-                $image = $item['portada_url'] ?: 'https://gocartagenarealestate.com/wp-content/uploads/2025/01/cropped-favicon_1.png';
-                $portalClass = (string) ($item['portal'] ?? '') === 'mercadolibre' ? 'is-mercadolibre' : ((string) ($item['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit');
-              ?>
-              <article class="queue-item" data-filter-item data-filter-portal="<?= htmlspecialchars((string) ($item['portal'] ?? '')) ?>" data-filter-action="<?= htmlspecialchars((string) ($item['desired_action'] ?? '')) ?>" data-filter-status="<?= htmlspecialchars((string) ($item['sync_status'] ?? '')) ?>" data-filter-text="<?= htmlspecialchars(strtolower((string) ($item['reference_id'] ?? '') . ' ' . (string) ($item['titulo'] ?? '') . ' ' . (string) ($item['barrio'] ?? '') . ' ' . (string) ($item['direccion'] ?? ''))) ?>">
-                <img src="<?= htmlspecialchars((string) $image) ?>" alt="<?= htmlspecialchars((string) ($item['titulo'] ?? 'Inmueble')) ?>" loading="lazy" decoding="async">
-                <div>
-                  <strong><?= htmlspecialchars((string) ($item['titulo'] ?? 'Inmueble sin titulo')) ?></strong>
-                  <span>ID <?= htmlspecialchars((string) ($item['reference_id'] ?? '')) ?> · <?= htmlspecialchars((string) ($item['barrio'] ?: 'Sin barrio')) ?></span>
-                  <small><?= htmlspecialchars((string) ($item['direccion'] ?: 'Sin direccion')) ?></small>
-                </div>
-                <div class="queue-meta">
-                  <span class="portal-badge <?= $portalClass ?>"><?= htmlspecialchars((string) ($item['portal_label'] ?? 'Portal')) ?></span>
-                  <strong><?= htmlspecialchars((string) ($item['action_label'] ?? 'Sin accion')) ?></strong>
-                </div>
-                <div class="queue-meta">
-                  <span class="table-pill"><?= htmlspecialchars((string) ($item['sync_status'] ?? 'pending')) ?></span>
-                  <span class="table-pill table-pill-dark"><?= htmlspecialchars((string) ($item['remote_status'] ?? 'not_sent')) ?></span>
-                </div>
-                <div class="queue-meta queue-price">
-                  <strong><?= htmlspecialchars((string) ($item['price_label'] ?? 'Sin precio')) ?></strong>
-                  <span><?= htmlspecialchars((string) ($item['specs_label'] ?? '')) ?></span>
-                </div>
-                <?php if (!empty($item['last_error'])): ?>
-                  <p class="queue-error"><?= htmlspecialchars((string) $item['last_error']) ?></p>
-                <?php endif; ?>
-              </article>
-            <?php endforeach; ?>
-          </div>
-        <?php else: ?>
-          <div class="portal-empty compact-empty">
-            <strong>No hay inmuebles pendientes en cola.</strong>
-            <span>Cuando publiques, actualices o despubliques, apareceran aqui.</span>
-          </div>
-        <?php endif; ?>
-      </section>
+        <?php require __DIR__ . '/portal-overview.php'; ?>
+        <?php require __DIR__ . '/queue-monitor.php'; ?>
       <?php endif; ?>
 
       <?php if ($activePage === 'automatizacion'): ?>
-      <section class="ops-board">
-        <div class="ops-heading">
-          <div>
-            <h2>Automatizacion</h2>
-            <p>Estado operativo de las colas y cron configurados.</p>
-          </div>
-        </div>
-        <div class="automation-grid">
-          <article>
-            <strong>Proppit</strong>
-            <span><?= (int) ($queue['pending'] ?? 0) ?> pendientes · <?= (int) ($queue['failed'] ?? 0) ?> fallidos</span>
-            <span>Cron web: /cron/proppit-sync</span>
-            <span>Script: cron/proppit-sync.php</span>
-          </article>
-          <article>
-            <strong>Finca Raiz</strong>
-            <span><?= (int) ($fincaraizQueue['pending'] ?? 0) ?> pendientes · <?= (int) ($fincaraizQueue['failed'] ?? 0) ?> fallidos</span>
-            <span>Cupo: <?= $fincaraizQuotaUsed ?>/<?= $fincaraizQuota ?> inmuebles</span>
-            <span>Cliente: <?= htmlspecialchars((string) getenv('FINCARAIZ_CLIENT_ID') ?: '7750b42d-a577-11f1-8d89-06ecc7fea243') ?></span>
-            <span>Cron web: /cron/fincaraiz-sync</span>
-          </article>
-          <article>
-            <strong>Todos</strong>
-            <span><?= (int) ($queue['pending'] ?? 0) + (int) ($fincaraizQueue['pending'] ?? 0) ?> pendientes totales</span>
-            <span>Cron web: /cron/portales-sync</span>
-            <span>API header: X-Api-Key</span>
-          </article>
-        </div>
-        <div class="automation-flow">
-          <div class="state-card-head">
-            <strong>Movimiento pendiente del cron</strong>
-            <span><?= count($queueItems) ?> acciones en cola</span>
-          </div>
-          <div class="panel-filter-strip compact-controls" data-live-filter="automation">
-            <label>
-              <span>Buscar</span>
-              <input type="search" data-filter-search placeholder="Codigo o titulo">
-            </label>
-            <label>
-              <span>Portal</span>
-              <select data-filter-field="portal">
-                <option value="">Todos</option>
-                <option value="proppit">Proppit</option>
-                <option value="fincaraiz">Finca Raiz</option>
-              <option value="mercadolibre">Mercado Libre</option>
-              </select>
-            </label>
-            <label>
-              <span>Accion</span>
-              <select data-filter-field="action">
-                <option value="">Todas</option>
-                <option value="publish">Publicar</option>
-                <option value="update">Actualizar</option>
-                <option value="delete">Despublicar</option>
-                <option value="pause">Pausar</option>
-                <option value="activate">Activar</option>
-                <option value="verify">Verificar</option>
-              </select>
-            </label>
-            <strong><span data-filter-count><?= count($queueItems) ?></span> visibles</strong>
-          </div>
-          <?php if ($queueItems): ?>
-            <div class="queue-list compact-queue">
-              <?php foreach ($queueItems as $item): ?>
-                <?php $portalClass = (string) ($item['portal'] ?? '') === 'mercadolibre' ? 'is-mercadolibre' : ((string) ($item['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit'); ?>
-                <article class="queue-item compact-row" data-filter-item data-filter-portal="<?= htmlspecialchars((string) ($item['portal'] ?? '')) ?>" data-filter-action="<?= htmlspecialchars((string) ($item['desired_action'] ?? '')) ?>" data-filter-status="<?= htmlspecialchars((string) ($item['sync_status'] ?? '')) ?>" data-filter-text="<?= htmlspecialchars(strtolower((string) ($item['reference_id'] ?? '') . ' ' . (string) ($item['titulo'] ?? '') . ' ' . (string) ($item['barrio'] ?? ''))) ?>">
-                  <div>
-                    <strong><?= htmlspecialchars((string) ($item['titulo'] ?? 'Inmueble sin titulo')) ?></strong>
-                    <span>ID <?= htmlspecialchars((string) ($item['reference_id'] ?? '')) ?> · <?= htmlspecialchars((string) ($item['barrio'] ?: 'Sin barrio')) ?></span>
-                  </div>
-                  <span class="portal-badge <?= $portalClass ?>"><?= htmlspecialchars((string) ($item['portal_label'] ?? 'Portal')) ?></span>
-                  <strong><?= htmlspecialchars((string) ($item['action_label'] ?? 'Sin accion')) ?></strong>
-                  <span class="table-pill"><?= htmlspecialchars((string) ($item['sync_status'] ?? 'pending')) ?></span>
-                </article>
-              <?php endforeach; ?>
-            </div>
-          <?php else: ?>
-            <div class="portal-empty compact-empty">
-              <strong>No hay acciones pendientes.</strong>
-              <span>El cron no tiene nada por publicar, actualizar o despublicar ahora mismo.</span>
-            </div>
-          <?php endif; ?>
-        </div>
-      </section>
+        <?php require __DIR__ . '/portal-overview.php'; ?>
+        <section class="cron-configuration">
+          <div class="section-heading"><h2>Ejecucion programada</h2><a class="refresh-button" href="<?= htmlspecialchars(\App\Core\Url::to('/panel/cola-cron')) ?>">Ver trabajos pendientes</a></div>
+          <dl class="connection-facts">
+            <div><dt>Script de todos los portales</dt><dd><code>cron/portales-sync.php</code></dd></div>
+            <div><dt>Frecuencia recomendada en hosting</dt><dd>Cada minuto</dd></div>
+            <div><dt>Programacion en hosting</dt><dd>No verificada desde el panel</dd></div>
+          </dl>
+        </section>
       <?php endif; ?>
 
       <?php if ($activePage === 'estados'): ?>
@@ -573,11 +353,13 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
             <span>Estado remoto</span>
             <select data-filter-field="remote">
               <option value="">Todos</option>
-              <option value="published">published</option>
-              <option value="active">active</option>
-              <option value="deleted">deleted</option>
-              <option value="disabled">disabled</option>
-              <option value="error">error</option>
+              <option value="published">Publicado en Proppit</option>
+              <option value="active">Publicado</option>
+              <option value="deleted">Eliminado</option>
+              <option value="disabled">Despublicado</option>
+              <option value="paused">Pausado</option>
+              <option value="closed">Finalizado</option>
+              <option value="error">Con error</option>
             </select>
           </label>
           <strong><span data-filter-count><?= array_sum(array_map('count', $stateSummary)) ?></span> visibles</strong>
@@ -601,7 +383,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                       <div>
                         <strong><?= htmlspecialchars((string) ($item['titulo'] ?? 'Inmueble sin titulo')) ?></strong>
                         <span>ID <?= htmlspecialchars((string) ($item['reference_id'] ?? '')) ?> · <?= htmlspecialchars((string) ($item['barrio'] ?: 'Sin barrio')) ?></span>
-                        <small><?= htmlspecialchars((string) ($item['remote_status'] ?? '')) ?> · <?= htmlspecialchars((string) ($item['sync_status'] ?? '')) ?></small>
+                        <small><?= htmlspecialchars($stateLabel((string) ($item['remote_status'] ?? ''))) ?> · <?= htmlspecialchars($stateLabel((string) ($item['sync_status'] ?? ''))) ?></small>
                         <?php if (!empty($item['last_error'])): ?>
                           <p><?= htmlspecialchars((string) $item['last_error']) ?></p>
                         <?php endif; ?>
@@ -638,7 +420,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
           <table class="property-table">
             <thead>
               <tr>
-                <th><input type="checkbox" data-master-check aria-label="Seleccionar todos"></th>
+                <th>Codigo</th>
                 <th>Inmueble</th>
                 <th>Precio</th>
                 <th>Estado</th>
@@ -740,7 +522,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                 ], $row['contactos'] ?? [])),
                 'media' => array_slice(array_values(array_map(fn ($item) => (string) $item['url'], $row['multimedia'] ?? [])), 0, 6),
                 'fullUrl' => \App\Core\Url::to('/panel/inmuebles/' . $row['id']),
-                'canManage' => !$isUnavailable,
+                'canManage' => !$isUnavailable && $portalFilter !== '' && ($actionPortal !== 'mercadolibre' || $mlReady),
                 'actionPortal' => $rowActionPortal,
                 'actionPortalLabel' => $rowPortalLabel,
                 'publishUrl' => \App\Core\Url::to($rowPublishPath),
@@ -755,7 +537,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
               ];
             ?>
               <tr data-property-id="<?= (int) $row['id'] ?>" data-row-search="<?= htmlspecialchars(strtolower((string) $row['reference_id'] . ' ' . (string) $row['titulo'] . ' ' . (string) ($row['barrio'] ?? '') . ' ' . (string) ($row['direccion'] ?? '') . ' ' . (string) ($row['tipo_inmueble'] ?? ''))) ?>">
-                <td class="check-cell"><input type="checkbox" data-row-check aria-label="Seleccionar inmueble <?= htmlspecialchars((string) $row['reference_id']) ?>"></td>
+                <td class="check-cell"><?= htmlspecialchars((string) $row['reference_id']) ?></td>
                 <td>
                   <div class="table-property">
                     <img src="<?= htmlspecialchars((string) $image) ?>" alt="<?= htmlspecialchars((string) $row['titulo']) ?>" loading="lazy" decoding="async">
@@ -772,37 +554,36 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                   <span class="table-mini"><?= (int) ($row['habitaciones'] ?? 0) ?> Hab · <?= (int) ($row['banos'] ?? 0) ?> Ba · <?= number_format((float) ($row['area_construida'] ?: $row['area_privada'] ?: 0), 0, ',', '.') ?> m²</span>
                 </td>
                 <td>
-                  <span class="table-pill" <?= $rowActionPortal === 'mercadolibre' ? 'data-card-ml-sync' : 'data-card-sync' ?>><?= htmlspecialchars($rowActionPortal === 'mercadolibre' ? ($row['mercadolibre_sync_status'] ?? 'Sin cola') : ($rowActionPortal === 'fincaraiz' ? $fincaraizSync : $proppitSync)) ?></span>
                   <span class="table-mini"><?= $isUnavailable ? 'No disponible' : 'Disponible' ?></span>
                 </td>
                 <td class="portal-chip-cell">
                   <div class="portal-status-stack">
-                    <div class="portal-status-row is-proppit">
+                    <div class="portal-status-row is-proppit" <?= !in_array($portalFilter, ['', 'proppit'], true) ? 'hidden' : '' ?>>
                       <div>
                         <strong>Proppit</strong>
                         <span data-card-proppit-action><?= htmlspecialchars($portalActionText($proppitAction, $proppitSync)) ?></span>
                       </div>
                       <div class="portal-status-tags">
-                        <span class="table-pill table-pill-dark" data-card-remote><?= htmlspecialchars($proppitRemote) ?></span>
-                        <span class="table-pill" data-card-proppit-sync><?= htmlspecialchars($proppitSync) ?></span>
+                        <span class="table-pill table-pill-dark" data-card-remote data-state="<?= htmlspecialchars($proppitRemote) ?>"><?= htmlspecialchars($stateLabel($proppitRemote)) ?></span>
+                        <span class="table-pill" data-card-proppit-sync data-state="<?= htmlspecialchars($proppitSync) ?>"><?= htmlspecialchars($stateLabel($proppitSync)) ?></span>
                       </div>
                     </div>
-                    <div class="portal-status-row is-mercadolibre">
+                    <div class="portal-status-row is-mercadolibre" <?= !in_array($portalFilter, ['', 'mercadolibre'], true) ? 'hidden' : '' ?>>
                       <div><strong>Mercado Libre</strong><span data-card-ml-action><?= htmlspecialchars($portalActionText($row['mercadolibre_desired_action'] ?? '', $row['mercadolibre_sync_status'] ?? '')) ?></span></div>
                       <div class="portal-status-tags">
-                        <span class="table-pill" data-card-ml-remote><?= htmlspecialchars($row['mercadolibre_remote_status'] ?? 'Sin publicar') ?></span>
-                        <span class="table-pill" data-card-ml-sync><?= htmlspecialchars($row['mercadolibre_sync_status'] ?? 'Sin cola') ?></span>
+                        <span class="table-pill" data-card-ml-remote data-state="<?= htmlspecialchars($row['mercadolibre_remote_status'] ?? 'not_sent') ?>"><?= htmlspecialchars($stateLabel($row['mercadolibre_remote_status'] ?? 'not_sent')) ?></span>
+                        <span class="table-pill" data-card-ml-sync data-state="<?= htmlspecialchars($row['mercadolibre_sync_status'] ?? '') ?>"><?= htmlspecialchars($stateLabel($row['mercadolibre_sync_status'] ?? '')) ?></span>
                       </div>
                       <p class="property-error" data-card-ml-error <?= empty($row['mercadolibre_last_error']) ? 'hidden' : '' ?>><?= htmlspecialchars($row['mercadolibre_last_error'] ?? '') ?></p>
                     </div>
-                    <div class="portal-status-row is-fincaraiz">
+                    <div class="portal-status-row is-fincaraiz" <?= !in_array($portalFilter, ['', 'fincaraiz'], true) ? 'hidden' : '' ?>>
                       <div>
                         <strong>Finca Raiz</strong>
                         <span data-card-fr-action><?= htmlspecialchars($portalActionText($fincaraizAction, $fincaraizSync)) ?></span>
                       </div>
                       <div class="portal-status-tags">
-                        <span class="table-pill table-pill-fr" data-card-fr-remote><?= htmlspecialchars($fincaraizRemote) ?></span>
-                        <span class="table-pill" data-card-fr-sync><?= htmlspecialchars($fincaraizSync) ?></span>
+                        <span class="table-pill table-pill-fr" data-card-fr-remote data-state="<?= htmlspecialchars($fincaraizRemote) ?>"><?= htmlspecialchars($stateLabel($fincaraizRemote)) ?></span>
+                        <span class="table-pill" data-card-fr-sync data-state="<?= htmlspecialchars($fincaraizSync) ?>"><?= htmlspecialchars($stateLabel($fincaraizSync)) ?></span>
                       </div>
                     </div>
                   </div>
@@ -812,17 +593,26 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                 <td>
                   <?php if ($rowActionPortal === 'mercadolibre'): ?>
                   <span data-card-ml-type><?= htmlspecialchars(['silver' => 'Plata','gold' => 'Oro','gold_premium' => 'Oro Premium'][$row['mercadolibre_listing_type'] ?? ''] ?? ($row['mercadolibre_listing_type'] ?: 'Sin asignar')) ?></span>
+                  <?php elseif ($rowActionPortal === 'fincaraiz'): ?>
+                  <span class="table-mini">No aplica</span>
                   <?php else: ?>
+                  <small class="table-mini">Proppit</small>
                   <span data-card-boosted><?= $isBoosted ? 'Destacado: activo' : 'Destacado: inactivo' ?></span><br>
                   <span data-card-exclusive><?= $isExclusive ? 'Exclusivo: activo' : 'Exclusivo: inactivo' ?></span>
                   <?php endif; ?>
                 </td>
                 <td>
                   <div class="property-actions table-actions">
-                  <?php if ($isUnavailable): ?>
+                  <?php if ($portalFilter === ''): ?>
+                    <?php foreach (['proppit'=>'Proppit','fincaraiz'=>'Finca Raiz','mercadolibre'=>'Mercado Libre'] as $portal=>$label): ?>
+                      <a class="refresh-button" href="<?= htmlspecialchars(\App\Core\Url::to('/panel/inmuebles') . '?' . http_build_query(['portal'=>$portal,'codigo'=>$row['reference_id']])) ?>"><?= $label ?></a>
+                    <?php endforeach; ?>
+                  <?php elseif ($rowActionPortal === 'mercadolibre' && !$mlReady): ?>
+                    <a class="refresh-button" href="<?= htmlspecialchars(\App\Core\Url::to('/panel/automatizacion')) ?>">Completar conexion</a>
+                  <?php elseif ($isUnavailable): ?>
                     <div class="unavailable-note">No disponible</div>
                   <?php else: ?>
-                    <span class="action-portal-label"><?= htmlspecialchars($rowPortalLabel) ?></span>
+                    <details class="row-action-menu"><summary>Gestionar <?= htmlspecialchars($rowPortalLabel) ?></summary>
                     <form method="post" action="<?= htmlspecialchars(\App\Core\Url::to($rowPublishPath)) ?>" data-ajax-action data-action-label="<?= htmlspecialchars($rowPublishLabel) ?>">
                       <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf) ?>">
                       <input type="hidden" name="_redirect" value="<?= htmlspecialchars($currentUrl) ?>">
@@ -866,6 +656,7 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                         </form>
                       </div>
                     <?php endif; ?>
+                    </details>
                   <?php endif; ?>
                   </div>
                 </td>
@@ -881,8 +672,8 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
         <section class="logs-panel" id="logs">
           <div class="ops-heading">
             <div>
-              <h2>Logs recientes</h2>
-              <p>Respuestas del cron y de los botones del panel, mezcladas por hora.</p>
+              <h2>Historial de operaciones</h2>
+              <p>Ultimos resultados registrados, del mas reciente al mas antiguo.</p>
             </div>
           </div>
           <div class="panel-filter-strip" data-live-filter="logs">
@@ -909,8 +700,9 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
             </label>
             <label>
               <span>HTTP</span>
-              <select data-filter-field="http">
+            <select data-filter-field="http">
                 <option value="">Todos</option>
+                <option value="0">Validacion local</option>
                 <option value="200">200</option>
                 <option value="201">201</option>
                 <option value="202">202</option>
@@ -928,15 +720,15 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
                 $ok = (int) ($log['success'] ?? 0) === 1;
                 $portalClass = (string) ($log['portal'] ?? '') === 'mercadolibre' ? 'is-mercadolibre' : ((string) ($log['portal'] ?? '') === 'fincaraiz' ? 'is-fincaraiz' : 'is-proppit');
               ?>
-              <article data-filter-item data-filter-portal="<?= htmlspecialchars((string) ($log['portal'] ?? '')) ?>" data-filter-result="<?= $ok ? 'ok' : 'error' ?>" data-filter-http="<?= htmlspecialchars((string) ($log['http_status'] ?? '')) ?>" data-filter-text="<?= htmlspecialchars(strtolower((string) ($log['reference_id'] ?? '') . ' ' . (string) ($log['titulo'] ?? '') . ' ' . (string) ($log['action'] ?? '') . ' ' . (string) ($log['error_message'] ?? ''))) ?>">
+              <article data-filter-item data-filter-portal="<?= htmlspecialchars((string) ($log['portal'] ?? '')) ?>" data-filter-result="<?= $ok ? 'ok' : 'error' ?>" data-filter-http="<?= (int) ($log['http_status'] ?? 0) ?>" data-filter-text="<?= htmlspecialchars(strtolower((string) ($log['reference_id'] ?? '') . ' ' . (string) ($log['titulo'] ?? '') . ' ' . (string) ($log['action'] ?? '') . ' ' . (string) ($log['error_message'] ?? ''))) ?>">
                 <div class="log-main">
                   <span class="portal-badge <?= $portalClass ?>"><?= htmlspecialchars((string) ($log['portal_label'] ?? 'Portal')) ?></span>
                   <strong><?= htmlspecialchars((string) ($log['titulo'] ?: 'Inmueble sin titulo')) ?></strong>
-                  <small>ID <?= htmlspecialchars((string) ($log['reference_id'] ?? 'sin codigo')) ?> · <?= htmlspecialchars((string) ($log['action'] ?? 'sync')) ?></small>
+                  <small>ID <?= htmlspecialchars((string) ($log['reference_id'] ?? 'sin codigo')) ?> · <?= htmlspecialchars(\App\Core\PortalDisplay::action($log['action'] ?? '')) ?></small>
                 </div>
                 <div class="log-status <?= $ok ? 'is-ok' : 'is-error' ?>">
-                  <strong><?= $ok ? 'OK' : 'ERROR' ?></strong>
-                  <span>HTTP <?= htmlspecialchars((string) ($log['http_status'] ?? '')) ?></span>
+                  <strong><?= $ok ? 'Confirmado' : 'Con error' ?></strong>
+                  <span><?= (int) ($log['http_status'] ?? 0) > 0 ? 'HTTP ' . (int) $log['http_status'] : 'Validacion local' ?></span>
                   <small><?= htmlspecialchars((string) ($log['created_at'] ?? '')) ?></small>
                 </div>
                 <?php if (!empty($log['error_message'])): ?>
@@ -1069,6 +861,6 @@ $to = min($pagination['total'], $pagination['page'] * $pagination['per_page']);
     </section>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="<?= htmlspecialchars(\App\Core\Url::to('/panel.js')) ?>?v=20260922-ml1"></script>
+  <script src="<?= htmlspecialchars(\App\Core\Url::to('/panel.js')) ?>?v=20260922-ops2"></script>
 </body>
 </html>
