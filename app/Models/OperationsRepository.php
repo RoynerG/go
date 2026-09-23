@@ -32,22 +32,25 @@ final class OperationsRepository
     {
         $filters = self::filters($input);
         $history = $filters['view'] === 'history';
+        $text = "COLLATE utf8mb4_unicode_ci";
         $parts = [];
         foreach (['proppit', 'fincaraiz', 'mercadolibre'] as $portal) {
             if ($filters['portal'] !== '' && $filters['portal'] !== $portal) continue;
             if ($history) {
                 $parts[] = "SELECT l.id entry_id, l.inmueble_id, '{$portal}' portal,
                     CASE l.action WHEN 'create_ad' THEN 'publish' WHEN 'create' THEN 'publish'
-                        WHEN 'update_ad' THEN 'update' WHEN 'delete_ad' THEN 'pause' ELSE l.action END desired_action,
-                    IF(l.success=1,'synced','failed') sync_status, '' remote_status,
-                    l.error_message last_error, l.created_at updated_at, NULL next_attempt_at,
+                        WHEN 'update_ad' THEN 'update' WHEN 'delete_ad' THEN 'pause' ELSE l.action END {$text} desired_action,
+                    IF(l.success=1,'synced','failed') {$text} sync_status, '' {$text} remote_status,
+                    l.error_message {$text} last_error, l.created_at updated_at, NULL next_attempt_at,
                     NULL attempts, l.http_status FROM {$portal}_logs l";
             } else {
                 $retry = $portal === 'mercadolibre' ? 'next_attempt_at' : 'next_sync_at';
                 $attempts = $portal === 'mercadolibre' ? 'attempts' : 'retry_count';
                 $action = $portal === 'proppit' ? "CASE a.desired_action WHEN 'delete' THEN 'pause' ELSE a.desired_action END" : 'a.desired_action';
                 $parts[] = "SELECT a.inmueble_id entry_id, a.inmueble_id, '{$portal}' portal,
-                    {$action} desired_action, a.sync_status, a.remote_status, a.last_error, a.updated_at,
+                    {$action} {$text} desired_action,
+                    a.sync_status {$text} sync_status, a.remote_status {$text} remote_status,
+                    a.last_error {$text} last_error, a.updated_at,
                     a.{$retry} next_attempt_at, a.{$attempts} attempts, NULL http_status
                     FROM {$portal}_ads a WHERE a.sync_status IN ('pending','processing','failed')";
             }
