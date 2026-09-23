@@ -36,6 +36,34 @@ final class MercadolibrePayloadBuilder
         return in_array(self::normalize((string) ($property['estado'] ?? '')), ['disponible', 'publico', 'publicado', '1'], true);
     }
 
+    public static function effectiveTitle(array $property): string
+    {
+        $title = trim(strip_tags((string) ($property['titulo'] ?? '')));
+        $code = trim((string) ($property['reference_id'] ?? ''));
+        if ($code === '' || $title === '') {
+            return $title;
+        }
+        if (mb_stripos($title, $code) !== false) {
+            return $title;
+        }
+        return '[' . $code . '] ' . $title;
+    }
+
+    public static function effectiveAddress(array $location): string
+    {
+        if (Env::bool('MERCADOLIBRE_SHOW_EXACT_ADDRESS', false)) {
+            return trim((string) ($location['direccion'] ?? ''));
+        }
+        $parts = [];
+        foreach (['barrio', 'ciudad'] as $field) {
+            $value = trim((string) ($location[$field] ?? ''));
+            if ($value !== '') {
+                $parts[] = $value;
+            }
+        }
+        return implode(', ', $parts);
+    }
+
     public static function fingerprint(array $property, string $intent): string
     {
         $data = array_intersect_key($property, array_flip(['reference_id','titulo','descripcion','tipo_inmueble',
@@ -56,9 +84,11 @@ final class MercadolibrePayloadBuilder
         $data['property_age'] = self::propertyAge($property);
         $data['catalog_neighborhood_id'] = self::catalogNeighborhood((string) ($property['ubicacion']['barrio'] ?? ''))['id'] ?? '';
         $data['payload_quality_version'] = 'mercadolibre-description-v2';
-        foreach (['CONTACT_NAME','CONTACT_EMAIL','CONTACT_PHONE','CONTACT_WHATSAPP','DUAL_OFFER','CATEGORY_MAP','LOCATION_MAP'] as $key) {
+        foreach (['CONTACT_NAME','CONTACT_EMAIL','CONTACT_PHONE','CONTACT_WHATSAPP','DUAL_OFFER','CATEGORY_MAP','LOCATION_MAP','SHOW_EXACT_ADDRESS'] as $key) {
             $data['config_' . $key] = Env::get('MERCADOLIBRE_' . $key, '');
         }
+        $data['effective_title'] = self::effectiveTitle($property);
+        $data['effective_address_line'] = self::effectiveAddress((array) ($property['ubicacion'] ?? []));
         return hash('sha256', json_encode($data, JSON_THROW_ON_ERROR));
     }
 
@@ -93,7 +123,7 @@ final class MercadolibrePayloadBuilder
         if (!$pictures) {
             throw new RuntimeException('No hay fotos publicas: Mercado Libre requiere al menos una imagen.');
         }
-        $title = trim(strip_tags((string) ($property['titulo'] ?? '')));
+        $title = self::effectiveTitle($property);
         $description = $this->descriptionText($property, $offer);
         if ($title === '' || $description === '') {
             throw new RuntimeException('Falta titulo del inmueble.');
@@ -182,9 +212,9 @@ final class MercadolibrePayloadBuilder
         } else {
             $neighborhood = $this->match($cityData['neighborhoods'] ?? [], $barrio === 'morros' ? ['zona norte'] : [$barrio], 'barrio ' . $barrio . ' (homologa MERCADOLIBRE_LOCATION_MAP)');
         }
-        $address = trim((string) ($location['direccion'] ?? ''));
+        $address = self::effectiveAddress($location);
         if ($address === '') {
-            throw new RuntimeException('El inmueble no tiene direccion.');
+            throw new RuntimeException('El inmueble no tiene barrio y ciudad para la direccion publica en Mercado Libre.');
         }
         return ['address_line' => $address, 'latitude' => $lat, 'longitude' => $lon,
             'country' => ['id' => 'CO'], 'state' => ['id' => $state['id']], 'city' => ['id' => $city['id']],
